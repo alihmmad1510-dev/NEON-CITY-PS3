@@ -4,21 +4,32 @@ on: [push, workflow_dispatch]
 jobs:
   build:
     runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
+    timeout-minutes: 20
 
-      - name: Setup env
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
         run: |
+          sudo apt-get update
+          sudo apt-get install -y python2.7 libelf-dev libtool-bin wget
+
+      - name: Download prebuilt PS3 Toolchain
+        run: |
+          cd ${{ github.workspace }}
+          wget -q --show-progress https://github.com/bucanero/ps3toolchain/releases/download/ubuntu-latest-fad3b5fb/ps3dev-ubuntu-latest-2020-08-31.tar.gz
+          tar xzf ps3dev-ubuntu-latest-2020-08-31.tar.gz
+          ls -la ps3dev/
           echo "PS3DEV=${{ github.workspace }}/ps3dev" >> $GITHUB_ENV
           echo "PSL1GHT=${{ github.workspace }}/ps3dev" >> $GITHUB_ENV
-          sudo apt-get update
-          sudo apt-get install -y python2.7 libelf-dev libtool-bin
 
-      - name: Download toolchain
+      - name: Verify toolchain
         run: |
-          curl -sL https://github.com/bucanero/ps3toolchain/releases/download/ubuntu-latest-fad3b5fb/ps3dev-ubuntu-latest-2020-08-31.tar.gz | tar xz -C ./
+          ls $PSL1GHT/ppu/bin/ | head
+          $PSL1GHT/ppu/bin/ppu-gcc --version || echo "ppu-gcc not found"
 
-      - name: Build
+      - name: Build PKG
         run: make pkg
 
       - name: Upload PKG
