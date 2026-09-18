@@ -44,7 +44,7 @@ jobs:
           ls $PSL1GHT/ppu/bin/ | head -20
 
       - name: Build
-        run: make
+        run: make all
 
       - name: List outputs
         if: always()
