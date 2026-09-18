@@ -1,6 +1,5 @@
 # ============================================================
-#  NEON CITY — Standalone Makefile
-#  مستقل تمامًا — يكتشف الـ Toolchain تلقائيًا
+#  NEON CITY — Standalone Makefile (نسخة نهائية)
 # ============================================================
 
 TARGET  := neoncity
@@ -15,53 +14,51 @@ PPU_GCC := $(shell find $(PS3DEV) -name "ppu-gcc" -type f 2>/dev/null | head -1)
 ifeq ($(strip $(PPU_GCC)),)
   PPU_GCC := $(shell find $(PS3DEV) -name "powerpc64-ps3-elf-gcc" -type f 2>/dev/null | head -1)
 endif
-ifeq ($(strip $(PPU_GCC)),)
-  PPU_GCC := $(shell find $(PS3DEV) -name "*ps3*gcc" -type f 2>/dev/null | head -1)
-endif
-ifeq ($(strip $(PPU_GCC)),)
-  PPU_GCC := $(shell find $(PS3DEV) -name "*-gcc" -type f 2>/dev/null | head -1)
-endif
 
-# ============================================================
-# اكتشاف make_self
-# ============================================================
 MAKE_SELF := $(shell find $(PS3DEV) -name "make_self" -type f 2>/dev/null | head -1)
 
 # ============================================================
-# اكتشاف المسارات
+# اكتشاف كل مجلدات الـ include المهمة
 # ============================================================
-TINY3D_H    := $(shell find $(PS3DEV) -name "tiny3d.h" -type f 2>/dev/null | head -1)
-INCLUDE_DIR := $(dir $(TINY3D_H))
-
-LIB_TINY3D  := $(shell find $(PS3DEV) -name "libtiny3d.a" -type f 2>/dev/null | head -1)
-LIB_FONT3D  := $(shell find $(PS3DEV) -name "libfont3d.a" -type f 2>/dev/null | head -1)
-
-LIB_DIR_1   := $(dir $(LIB_TINY3D))
-LIB_DIR_2   := $(dir $(LIB_FONT3D))
-PORTLIB_DIR := $(shell find $(PS3DEV) -type d -path "*portlibs/ppu/lib" 2>/dev/null | head -1)
-PPU_LIB_DIR := $(shell find $(PS3DEV) -type d -path "*/ppu/lib" 2>/dev/null | grep -v portlibs | head -1)
+# مجلد الـ PS3 SDK الأساسي (فيه ppu-types.h, sysutil.h, io/pad.h ...)
+PS3_INC     := $(shell find $(PS3DEV) -type d -path "*/ppu/include" 2>/dev/null | grep -v portlibs | head -1)
+# مجلد مكتبات طرف ثالث (فيه tiny3d.h, libfont.h)
+PORT_INC    := $(shell find $(PS3DEV) -type d -path "*portlibs/ppu/include" 2>/dev/null | head -1)
+# مجلد ps3dev/psl1ght (لو موجود)
+PSL_INC     := $(shell find $(PS3DEV) -type d -name "psl1ght" 2>/dev/null | head -1)
+PSL_PPU_INC := $(shell find $(PS3DEV) -type d -path "*psl1ght/ppu/include" 2>/dev/null | head -1)
 
 # ============================================================
-# تشخيص — هيظهر في اللوج
+# اكتشاف مجلدات المكتبات
+# ============================================================
+PS3_LIB     := $(shell find $(PS3DEV) -type d -path "*/ppu/lib" 2>/dev/null | grep -v portlibs | head -1)
+PORT_LIB    := $(shell find $(PS3DEV) -type d -path "*portlibs/ppu/lib" 2>/dev/null | head -1)
+
+# ============================================================
+# تشخيص
 # ============================================================
 $(info ============================================)
-$(info PPU_GCC    = $(PPU_GCC))
-$(info INCLUDE    = $(INCLUDE_DIR))
-$(info LIB_1      = $(LIB_DIR_1))
-$(info LIB_2      = $(LIB_DIR_2))
-$(info PORTLIB    = $(PORTLIB_DIR))
-$(info PPU_LIB    = $(PPU_LIB_DIR))
-$(info MAKE_SELF  = $(MAKE_SELF))
+$(info PPU_GCC      = $(PPU_GCC))
+$(info PS3_INC      = $(PS3_INC))
+$(info PORT_INC     = $(PORT_INC))
+$(info PSL_INC      = $(PSL_INC))
+$(info PSL_PPU_INC  = $(PSL_PPU_INC))
+$(info PS3_LIB      = $(PS3_LIB))
+$(info PORT_LIB     = $(PORT_LIB))
+$(info MAKE_SELF    = $(MAKE_SELF))
 $(info ============================================)
 
 # ============================================================
 # Flags
 # ============================================================
-CFLAGS  := -O2 -Wall -mhard-float -I$(INCLUDE_DIR)
-LDFLAGS := -L$(LIB_DIR_1) -L$(LIB_DIR_2) -L$(PORTLIB_DIR) -L$(PPU_LIB_DIR)
+INC_FLAGS := -I$(PS3_INC) -I$(PORT_INC) -I$(PS3DEV)/ppu/include
+
+LDFLAGS := -L$(PS3_LIB) -L$(PORT_LIB)
 
 LIBS    := -ltiny3d -lrsx -lgcm_sys -lio -lsysutil -lsysmodule \
            -laudio -lfont3d -lm -lnet -lrt -llv2
+
+CFLAGS  := -O2 -Wall -mhard-float $(INC_FLAGS)
 
 # ============================================================
 # Targets
