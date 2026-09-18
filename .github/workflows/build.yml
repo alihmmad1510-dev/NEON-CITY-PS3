@@ -10,6 +10,10 @@ jobs:
   build:
     runs-on: ubuntu-22.04
 
+    env:
+      PS3DEV: ${{ github.workspace }}/ps3dev
+      PSL1GHT: ${{ github.workspace }}/PSL1GHT
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,45 +30,56 @@ jobs:
             gcc \
             g++ \
             git \
+            libelf-dev \
             libtool \
-            make \
+            libtool-bin \
             pkg-config \
             python3 \
             wget \
             xz-utils
 
-      - name: Clone PS3DEV
+      - name: Prepare PS3 environment
+        run: |
+          mkdir -p "$PS3DEV"
+          mkdir -p "$PSL1GHT"
+
+          echo "PS3DEV=$PS3DEV"
+          echo "PSL1GHT=$PSL1GHT"
+
+      - name: Clone PS3 toolchain
         run: |
           git clone --depth 1 https://github.com/ps3dev/ps3toolchain.git
-          git clone --depth 1 https://github.com/ps3dev/PSL1GHT.git
+
+      - name: Clone PSL1GHT
+        run: |
+          git clone --depth 1 https://github.com/ps3dev/PSL1GHT.git "$PSL1GHT"
 
       - name: Build PS3 toolchain
         run: |
           cd ps3toolchain
+          chmod +x depends/*.sh || true
+          chmod +x toolchain.sh
           ./toolchain.sh
 
       - name: Build PSL1GHT
-        env:
-          PS3DEV: ${{ github.workspace }}/ps3dev
         run: |
           export PATH="$PS3DEV/bin:$PS3DEV/ppu/bin:$PS3DEV/spu/bin:$PATH"
-          cd ../PSL1GHT
+          cd "$PSL1GHT"
           make
           make install
 
       - name: Build NEON CITY
-        env:
-          PS3DEV: ${{ github.workspace }}/ps3dev
-          PSL1GHT: ${{ github.workspace }}/PSL1GHT
         run: |
           export PATH="$PS3DEV/bin:$PS3DEV/ppu/bin:$PS3DEV/spu/bin:$PATH"
           make
 
-      - name: Show build files
+      - name: Find PS3 output
         run: |
-          find . -type f \( -name "*.elf" -o -name "*.self" -o -name "*.pkg" \) -print
+          find . -type f \
+            \( -name "*.elf" -o -name "*.self" -o -name "*.pkg" \) \
+            -print
 
-      - name: Upload build
+      - name: Upload PS3 build
         uses: actions/upload-artifact@v4
         with:
           name: neon-city-ps3-build
