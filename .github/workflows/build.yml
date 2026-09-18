@@ -7,7 +7,7 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install deps
@@ -15,40 +15,28 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y python2.7 libelf-dev libtool-bin wget
 
-      - name: Download PS3 Toolchain
+      - name: Download toolchain
         run: |
           cd ${{ github.workspace }}
           wget -q https://github.com/bucanero/ps3toolchain/releases/download/ubuntu-latest-fad3b5fb/ps3dev-ubuntu-latest-2020-08-31.tar.gz
           tar xzf ps3dev-ubuntu-latest-2020-08-31.tar.gz
-
-      - name: Locate ppu_rules
-        id: locate
-        run: |
-          echo "=== Searching for ppu_rules ==="
-          FOUND=$(find ${{ github.workspace }} -name "ppu_rules" -type f 2>/dev/null | head -n 1)
-          echo "Found: $FOUND"
-          if [ -z "$FOUND" ]; then
-            echo "NOT FOUND — dumping structure:"
-            find ${{ github.workspace }} -maxdepth 3 -type d
-            exit 1
-          fi
-          PSL_PATH=$(dirname "$FOUND")
-          echo "PSL1GHT=$PSL_PATH" >> $GITHUB_ENV
-          echo "PS3DEV=${{ github.workspace }}/ps3dev" >> $GITHUB_ENV
-
-      - name: Verify env
-        run: |
-          echo "PSL1GHT = $PSL1GHT"
-          echo "PS3DEV  = $PS3DEV"
-          ls -la $PSL1GHT/ppu_rules
-          ls $PSL1GHT/ppu/bin/ | head -20
+          echo "=== ps3dev top-level ==="
+          ls -la ps3dev/
+          echo "=== find any gcc ==="
+          find ps3dev -name "*gcc*" -type f 2>/dev/null | head -10
+          echo "=== find ppu-rules ==="
+          find ps3dev -name "ppu_rules" -type f 2>/dev/null
 
       - name: Build
         run: make all
 
       - name: List outputs
         if: always()
-        run: ls -la *.self *.elf 2>/dev/null || echo "No outputs"
+        run: |
+          echo "=== build dir ==="
+          ls -la
+          echo "=== self/elf files ==="
+          ls -la *.self *.elf 2>/dev/null || echo "no outputs found"
 
       - name: Upload
         if: success()
