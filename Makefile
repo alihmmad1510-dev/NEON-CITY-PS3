@@ -1,7 +1,4 @@
-TARGET := neon_city_test
-
-BUILD_PRX := 1
-
-CSRCS := src/main.c
+TARGET := neoncity
+OFILES := src/main.o
 
 include $(PSL1GHT)/ppu_rules
