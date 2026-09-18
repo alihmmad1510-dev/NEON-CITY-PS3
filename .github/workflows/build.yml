@@ -1,19 +1,13 @@
-name: Build NEON CITY
-on: [push, workflow_dispatch]
+name: Diagnose Toolchain
+on: [workflow_dispatch]
 
 jobs:
-  build:
+  diagnose:
     runs-on: ubuntu-22.04
-    timeout-minutes: 20
+    timeout-minutes: 10
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y python2.7 libelf-dev libtool-bin wget
+      - uses: actions/checkout@v4
 
       - name: Download PS3 Toolchain
         run: |
@@ -21,37 +15,27 @@ jobs:
           wget -q https://github.com/bucanero/ps3toolchain/releases/download/ubuntu-latest-fad3b5fb/ps3dev-ubuntu-latest-2020-08-31.tar.gz
           tar xzf ps3dev-ubuntu-latest-2020-08-31.tar.gz
 
-      - name: Find ppu_rules location
+      - name: Show top-level structure
         run: |
-          echo "=== Looking for ppu_rules ==="
-          find ${{ github.workspace }} -name "ppu_rules" 2>/dev/null
+          echo "=== ps3dev top ==="
+          ls -la ps3dev/ || echo "NO ps3dev FOLDER"
 
-      - name: Set env
+      - name: Find ppu_rules
         run: |
-          PSL1GHT_PATH=$(dirname $(find ${{ github.workspace }} -name "ppu_rules" 2>/dev/null | head -1))
-          echo "Found ppu_rules in: $PSL1GHT_PATH"
-          echo "PS3DEV=${{ github.workspace }}/ps3dev" >> $GITHUB_ENV
-          echo "PSL1GHT=$PSL1GHT_PATH" >> $GITHUB_ENV
+          echo "=== searching for ppu_rules ==="
+          find . -name "ppu_rules" -type f 2>/dev/null
 
-      - name: Verify env
+      - name: Find ppu-gcc
         run: |
-          echo "PSL1GHT=$PSL1GHT"
-          echo "PS3DEV=$PS3DEV"
-          ls -la $PSL1GHT/ppu_rules
+          echo "=== searching for ppu-gcc ==="
+          find . -name "ppu-gcc" -type f 2>/dev/null | head -5
 
-      - name: Build SELF
-        run: make
-
-      - name: List outputs
+      - name: Show Makefile content
         run: |
-          ls -la
-          ls -la *.self *.elf 2>/dev/null || echo "no .self/.elf"
+          echo "=== Makefile ==="
+          cat Makefile
 
-      - name: Upload SELF
-        uses: actions/upload-artifact@v4
-        with:
-          name: neoncity-self
-          path: |
-            *.self
-            *.elf
-          if-no-files-found: warn
+      - name: Show main.c head
+        run: |
+          echo "=== src/main.c (first 20 lines) ==="
+          head -20 src/main.c 2>/dev/null || echo "NO src/main.c"
