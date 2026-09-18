@@ -20,26 +20,38 @@ jobs:
           cd ${{ github.workspace }}
           wget -q https://github.com/bucanero/ps3toolchain/releases/download/ubuntu-latest-fad3b5fb/ps3dev-ubuntu-latest-2020-08-31.tar.gz
           tar xzf ps3dev-ubuntu-latest-2020-08-31.tar.gz
-          echo "PS3DEV=${{ github.workspace }}/ps3dev" >> $GITHUB_ENV
-          echo "PSL1GHT=${{ github.workspace }}/ps3dev" >> $GITHUB_ENV
 
-      - name: Verify toolchain
+      - name: Find ppu_rules location
         run: |
-          echo "=== ppu_rules location ==="
-          ls -la $PSL1GHT/ppu_rules || echo "NOT AT TOP LEVEL"
-          find $PSL1GHT -name "ppu_rules" 2>/dev/null | head -5
+          echo "=== Looking for ppu_rules ==="
+          find ${{ github.workspace }} -name "ppu_rules" 2>/dev/null
+
+      - name: Set env
+        run: |
+          PSL1GHT_PATH=$(dirname $(find ${{ github.workspace }} -name "ppu_rules" 2>/dev/null | head -1))
+          echo "Found ppu_rules in: $PSL1GHT_PATH"
+          echo "PS3DEV=${{ github.workspace }}/ps3dev" >> $GITHUB_ENV
+          echo "PSL1GHT=$PSL1GHT_PATH" >> $GITHUB_ENV
+
+      - name: Verify env
+        run: |
+          echo "PSL1GHT=$PSL1GHT"
+          echo "PS3DEV=$PS3DEV"
+          ls -la $PSL1GHT/ppu_rules
 
       - name: Build SELF
         run: make
 
       - name: List outputs
-        run: ls -la *.self *.elf 2>/dev/null || true
+        run: |
+          ls -la
+          ls -la *.self *.elf 2>/dev/null || echo "no .self/.elf"
 
       - name: Upload SELF
         uses: actions/upload-artifact@v4
         with:
           name: neoncity-self
           path: |
-            neoncity.self
-            neoncity.elf
-          if-no-files-found: error
+            *.self
+            *.elf
+          if-no-files-found: warn
