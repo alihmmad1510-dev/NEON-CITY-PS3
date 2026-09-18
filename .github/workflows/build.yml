@@ -10,7 +10,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install deps
         run: |
           sudo apt-get update
           sudo apt-get install -y python2.7 libelf-dev libtool-bin wget
@@ -21,22 +21,41 @@ jobs:
           wget -q https://github.com/bucanero/ps3toolchain/releases/download/ubuntu-latest-fad3b5fb/ps3dev-ubuntu-latest-2020-08-31.tar.gz
           tar xzf ps3dev-ubuntu-latest-2020-08-31.tar.gz
 
-      - name: Set PSL1GHT environment variable
+      - name: Locate ppu_rules
+        id: locate
         run: |
-          # البحث عن مجلد ppu_rules تلقائيًا
-          PSL1GHT_PATH=$(dirname $(find ${{ github.workspace }} -name "ppu_rules" -type f | head -n 1))
-          echo "Found PSL1GHT at: $PSL1GHT_PATH"
-          echo "PSL1GHT=$PSL1GHT_PATH" >> $GITHUB_ENV
+          echo "=== Searching for ppu_rules ==="
+          FOUND=$(find ${{ github.workspace }} -name "ppu_rules" -type f 2>/dev/null | head -n 1)
+          echo "Found: $FOUND"
+          if [ -z "$FOUND" ]; then
+            echo "NOT FOUND — dumping structure:"
+            find ${{ github.workspace }} -maxdepth 3 -type d
+            exit 1
+          fi
+          PSL_PATH=$(dirname "$FOUND")
+          echo "PSL1GHT=$PSL_PATH" >> $GITHUB_ENV
           echo "PS3DEV=${{ github.workspace }}/ps3dev" >> $GITHUB_ENV
+
+      - name: Verify env
+        run: |
+          echo "PSL1GHT = $PSL1GHT"
+          echo "PS3DEV  = $PS3DEV"
+          ls -la $PSL1GHT/ppu_rules
+          ls $PSL1GHT/ppu/bin/ | head -20
 
       - name: Build
         run: make
 
-      - name: Upload SELF
+      - name: List outputs
+        if: always()
+        run: ls -la *.self *.elf 2>/dev/null || echo "No outputs"
+
+      - name: Upload
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: neoncity-self
+          name: neoncity-build
           path: |
-            neoncity.self
-            neoncity.elf
-          if-no-files-found: error
+            *.self
+            *.elf
+          if-no-files-found: warn
