@@ -8,20 +8,55 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            autoconf \
+            automake \
+            bison \
+            build-essential \
+            flex \
+            gcc \
+            g++ \
+            git \
+            libtool \
+            make \
+            pkg-config \
+            python3 \
+            wget \
+            xz-utils
+
+      - name: Clone PS3DEV toolchain
+        run: |
+          git clone --depth 1 https://github.com/ps3dev/ps3toolchain.git
+          git clone --depth 1 https://github.com/ps3dev/PSL1GHT.git
+
       - name: Show project
         run: |
-          echo "NEON CITY PS3 TEST BUILD"
-          echo "Project files:"
-          find . -maxdepth 3 -type f | sort
+          echo "NEON CITY PS3"
+          echo "Source:"
+          find src -maxdepth 2 -type f -print
 
-      - name: Check source
+      - name: Build
+        env:
+          PS3DEV: ${{ github.workspace }}/ps3dev
+          PSL1GHT: ${{ github.workspace }}/PSL1GHT
         run: |
-          test -f src/main.c
-          test -f Makefile
-          echo "Project structure OK"
+          export PATH="$PS3DEV/ppu/bin:$PS3DEV/spu/bin:$PS3DEV/bin:$PATH"
+          make
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: neon-city-ps3-build
+          path: |
+            *.elf
+            *.self
+            *.pkg
