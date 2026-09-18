@@ -1,140 +1,29 @@
-name: NEON CITY PS3 Build
-
-on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
+name: Build NEON CITY
+on: [push, workflow_dispatch]
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-
-    env:
-      PS3DEV: ${{ github.workspace }}/ps3dev
-      PSL1GHT: ${{ github.workspace }}/PSL1GHT
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Setup env
         run: |
+          echo "PS3DEV=${{ github.workspace }}/ps3dev" >> $GITHUB_ENV
+          echo "PSL1GHT=${{ github.workspace }}/ps3dev" >> $GITHUB_ENV
           sudo apt-get update
-          sudo apt-get install -y \
-            autoconf \
-            automake \
-            bison \
-            build-essential \
-            flex \
-            gcc \
-            g++ \
-            git \
-            libelf-dev \
-            libtool \
-            libtool-bin \
-            pkg-config \
-            python3 \
-            wget \
-            xz-utils
+          sudo apt-get install -y python2.7 libelf-dev libtool-bin
 
-      - name: Prepare directories
+      - name: Download toolchain
         run: |
-          mkdir -p "$PS3DEV"
-          mkdir -p "$PSL1GHT"
+          curl -sL https://github.com/bucanero/ps3toolchain/releases/download/ubuntu-latest-fad3b5fb/ps3dev-ubuntu-latest-2020-08-31.tar.gz | tar xz -C ./
 
-      - name: Clone PS3 toolchain
-        run: |
-          git clone --depth 1 \
-            https://github.com/ps3dev/ps3toolchain.git \
-            ps3toolchain
+      - name: Build
+        run: make pkg
 
-      - name: Clone PSL1GHT
-        run: |
-          git clone --depth 1 \
-            https://github.com/ps3dev/PSL1GHT.git \
-            "$PSL1GHT"
-
-      - name: Configure PS3DEV PATH
-        run: |
-          echo "$PS3DEV/bin" >> "$GITHUB_PATH"
-          echo "$PS3DEV/ppu/bin" >> "$GITHUB_PATH"
-          echo "$PS3DEV/spu/bin" >> "$GITHUB_PATH"
-
-          export PATH="$PS3DEV/bin:$PS3DEV/ppu/bin:$PS3DEV/spu/bin:$PATH"
-
-          echo "PS3DEV=$PS3DEV"
-          echo "PSL1GHT=$PSL1GHT"
-          echo "PATH=$PATH"
-
-      - name: Check environment
-        run: |
-          mkdir -p "$PS3DEV/bin"
-
-          echo "PS3DEV:"
-          echo "$PS3DEV"
-
-          echo "PSL1GHT:"
-          echo "$PSL1GHT"
-
-          echo "PATH:"
-          echo "$PATH"
-
-      - name: Build PS3 toolchain
-        run: |
-          export PATH="$PS3DEV/bin:$PS3DEV/ppu/bin:$PS3DEV/spu/bin:$PATH"
-
-          cd ps3toolchain
-
-          chmod +x toolchain.sh
-          chmod +x depends/*.sh || true
-
-          ./toolchain.sh
-
-      - name: Check PS3 tools
-        run: |
-          export PATH="$PS3DEV/bin:$PS3DEV/ppu/bin:$PS3DEV/spu/bin:$PATH"
-
-          echo "PS3DEV tools:"
-          ls -la "$PS3DEV/bin" || true
-
-          echo "PPU tools:"
-          ls -la "$PS3DEV/ppu/bin" || true
-
-      - name: Build PSL1GHT
-        run: |
-          export PATH="$PS3DEV/bin:$PS3DEV/ppu/bin:$PS3DEV/spu/bin:$PATH"
-
-          cd "$PSL1GHT"
-
-          make
-          make install
-
-      - name: Build NEON CITY
-        run: |
-          export PATH="$PS3DEV/bin:$PS3DEV/ppu/bin:$PS3DEV/spu/bin:$PATH"
-
-          echo "Building NEON CITY..."
-          make
-
-      - name: Find PS3 files
-        run: |
-          echo "Searching for PS3 output..."
-
-          find . -type f \
-            \( \
-              -name "*.elf" \
-              -o -name "*.self" \
-              -o -name "*.pkg" \
-            \) \
-            -print
-
-      - name: Upload PS3 build
+      - name: Upload PKG
         uses: actions/upload-artifact@v4
         with:
-          name: neon-city-ps3-build
-          path: |
-            **/*.elf
-            **/*.self
-            **/*.pkg
-          if-no-files-found: warn
+          name: neoncity-pkg
+          path: neoncity.pkg
+          if-no-files-found: error
