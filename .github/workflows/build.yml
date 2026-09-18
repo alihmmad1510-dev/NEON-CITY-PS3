@@ -1,0 +1,27 @@
+name: NEON CITY PS3 Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show project
+        run: |
+          echo "NEON CITY PS3 TEST BUILD"
+          echo "Project files:"
+          find . -maxdepth 3 -type f | sort
+
+      - name: Check source
+        run: |
+          test -f src/main.c
+          test -f Makefile
+          echo "Project structure OK"
