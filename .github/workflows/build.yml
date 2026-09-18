@@ -15,26 +15,31 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y python2.7 libelf-dev libtool-bin wget
 
-      - name: Download prebuilt PS3 Toolchain
+      - name: Download PS3 Toolchain
         run: |
           cd ${{ github.workspace }}
-          wget -q --show-progress https://github.com/bucanero/ps3toolchain/releases/download/ubuntu-latest-fad3b5fb/ps3dev-ubuntu-latest-2020-08-31.tar.gz
+          wget -q https://github.com/bucanero/ps3toolchain/releases/download/ubuntu-latest-fad3b5fb/ps3dev-ubuntu-latest-2020-08-31.tar.gz
           tar xzf ps3dev-ubuntu-latest-2020-08-31.tar.gz
-          ls -la ps3dev/
           echo "PS3DEV=${{ github.workspace }}/ps3dev" >> $GITHUB_ENV
           echo "PSL1GHT=${{ github.workspace }}/ps3dev" >> $GITHUB_ENV
 
       - name: Verify toolchain
         run: |
-          ls $PSL1GHT/ppu/bin/ | head
-          $PSL1GHT/ppu/bin/ppu-gcc --version || echo "ppu-gcc not found"
+          echo "=== ppu_rules location ==="
+          ls -la $PSL1GHT/ppu_rules || echo "NOT AT TOP LEVEL"
+          find $PSL1GHT -name "ppu_rules" 2>/dev/null | head -5
 
-      - name: Build PKG
-        run: make pkg
+      - name: Build SELF
+        run: make
 
-      - name: Upload PKG
+      - name: List outputs
+        run: ls -la *.self *.elf 2>/dev/null || true
+
+      - name: Upload SELF
         uses: actions/upload-artifact@v4
         with:
-          name: neoncity-pkg
-          path: neoncity.pkg
+          name: neoncity-self
+          path: |
+            neoncity.self
+            neoncity.elf
           if-no-files-found: error
