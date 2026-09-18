@@ -1,4 +1,4 @@
-name: NEON CITY PS3 Test
+name: NEON CITY PS3 Build
 
 on:
   workflow_dispatch:
@@ -7,19 +7,68 @@ on:
       - main
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show files
+      - name: Install dependencies
         run: |
-          echo "=== PROJECT FILES ==="
-          find . -maxdepth 3 -type f | sort
+          sudo apt-get update
+          sudo apt-get install -y \
+            autoconf \
+            automake \
+            bison \
+            build-essential \
+            flex \
+            gcc \
+            g++ \
+            git \
+            libtool \
+            make \
+            pkg-config \
+            python3 \
+            wget \
+            xz-utils
 
-      - name: Show Makefile
+      - name: Clone PS3DEV
         run: |
-          echo "=== MAKEFILE ==="
-          cat Makefile
+          git clone --depth 1 https://github.com/ps3dev/ps3toolchain.git
+          git clone --depth 1 https://github.com/ps3dev/PSL1GHT.git
+
+      - name: Build PS3 toolchain
+        run: |
+          cd ps3toolchain
+          ./toolchain.sh
+
+      - name: Build PSL1GHT
+        env:
+          PS3DEV: ${{ github.workspace }}/ps3dev
+        run: |
+          export PATH="$PS3DEV/bin:$PS3DEV/ppu/bin:$PS3DEV/spu/bin:$PATH"
+          cd ../PSL1GHT
+          make
+          make install
+
+      - name: Build NEON CITY
+        env:
+          PS3DEV: ${{ github.workspace }}/ps3dev
+          PSL1GHT: ${{ github.workspace }}/PSL1GHT
+        run: |
+          export PATH="$PS3DEV/bin:$PS3DEV/ppu/bin:$PS3DEV/spu/bin:$PATH"
+          make
+
+      - name: Show build files
+        run: |
+          find . -type f \( -name "*.elf" -o -name "*.self" -o -name "*.pkg" \) -print
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: neon-city-ps3-build
+          path: |
+            **/*.elf
+            **/*.self
+            **/*.pkg
