@@ -1,3 +1,9 @@
+# =====================================================================
+#  FILE: .github/workflows/build.yml
+#  PROJECT: NEON CITY ULTRA v3
+#  DESCRIPTION: Build SELF + PKG with icons (~3MB)
+# =====================================================================
+
 name: Build NEON CITY PKG
 on: [push, workflow_dispatch]
 
@@ -10,13 +16,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install system dependencies
+      - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3 python3-pip python3-dev libelf-dev libtool-bin wget git build-essential
+          sudo apt-get install -y python3 python3-pip libelf-dev libtool-bin wget git
           pip3 install Pillow pycryptodome
 
-      - name: Download PS3 Toolchain
+      - name: Download toolchain
         run: |
           wget -q https://github.com/bucanero/ps3toolchain/releases/download/ubuntu-latest-fad3b5fb/ps3dev-ubuntu-latest-2020-08-31.tar.gz
           tar xzf ps3dev-ubuntu-latest-2020-08-31.tar.gz
@@ -29,22 +35,22 @@ jobs:
           if [ -f ps3dev/bin/make_fself ]; then
             chmod +x ps3dev/bin/make_fself
             ps3dev/bin/make_fself neoncity.elf neoncity.fself
-            echo "✅ FSELF created"
+            echo "FSELF created"
           else
             cp neoncity.self neoncity.fself
-            echo "⚠️ using self as fself"
+            echo "using self as fself"
           fi
 
       - name: Get ps3py
         run: |
           git clone --depth 1 --branch use-python3 https://github.com/sahlberg/PSL1GHT.git /tmp/psl1ght-py3
-          ls -la /tmp/psl1ght-py3/tools/ps3py/
+          ls -la /tmp/psl1ght-py3/tools/ps3py/ || true
 
       - name: Build pkgcrypt
         continue-on-error: true
         run: |
           cd /tmp/psl1ght-py3/tools/ps3py
-          python3 setup.py build_ext --inplace 2>&1 | head -20 || echo "setup.py failed"
+          python3 setup.py build_ext --inplace 2>&1 | head -20 || true
           ls -la *.so 2>/dev/null || echo "no .so"
 
       - name: Prepare PKG structure
@@ -52,13 +58,17 @@ jobs:
           mkdir -p pkgbuild/USRDIR
           cp neoncity.fself pkgbuild/USRDIR/EBOOT.BIN
           python3 tools/make_sfo.py pkgbuild/PARAM.SFO || echo "sfo skipped"
-          echo "=== Generating icons ==="
+          echo "=== Generating images ==="
           OUT_DIR=$PWD python3 tools/make_icons.py
           cp ICON0.PNG pkgbuild/ICON0.PNG
           cp PIC0.PNG  pkgbuild/PIC0.PNG
           cp PIC1.PNG  pkgbuild/PIC1.PNG
+          mkdir -p pkgbuild/USRDIR/previews
+          cp PREVIEW*.PNG pkgbuild/USRDIR/previews/ 2>/dev/null || true
           echo "=== PKG contents ==="
           find pkgbuild -type f
+          echo "=== Total size ==="
+          du -sh pkgbuild/
 
       - name: Build PKG
         continue-on-error: true
@@ -69,19 +79,19 @@ jobs:
           OUT_PKG="${{ github.workspace }}/neoncity.pkg"
           CID="UP0001-NEONCITY1_00-NEONCITY00000001"
 
-          echo "=== Attempt 1: --contentid ==="
+          echo "=== V1: --contentid ==="
           python3 pkg.py --contentid "$CID" "$BUILD_DIR" "$OUT_PKG" 2>&1
-          if [ -f "$OUT_PKG" ]; then echo "✅ PKG V1 OK"; exit 0; fi
+          if [ -f "$OUT_PKG" ]; then echo "PKG V1 OK"; exit 0; fi
 
-          echo "=== Attempt 2: positional ==="
+          echo "=== V2: positional ==="
           python3 pkg.py "$CID" "$BUILD_DIR" "$OUT_PKG" 2>&1
-          if [ -f "$OUT_PKG" ]; then echo "✅ PKG V2 OK"; exit 0; fi
+          if [ -f "$OUT_PKG" ]; then echo "PKG V2 OK"; exit 0; fi
 
-          echo "=== Attempt 3: -c flag ==="
+          echo "=== V3: -c flag ==="
           python3 pkg.py -c "$CID" "$BUILD_DIR" "$OUT_PKG" 2>&1
-          if [ -f "$OUT_PKG" ]; then echo "✅ PKG V3 OK"; exit 0; fi
+          if [ -f "$OUT_PKG" ]; then echo "PKG V3 OK"; exit 0; fi
 
-          echo "❌ All PKG attempts failed — EBOOT.BIN still available"
+          echo "All PKG attempts failed — EBOOT.BIN still available"
 
       - name: Final listing
         if: always()
@@ -93,8 +103,8 @@ jobs:
                  ${{ github.workspace }}/*.pkg \
                  ${{ github.workspace }}/*.PNG 2>/dev/null || true
           echo ""
-          echo "=== pkgbuild ==="
-          find pkgbuild -type f 2>/dev/null || true
+          echo "=== PKG size ==="
+          du -h ${{ github.workspace }}/neoncity.pkg 2>/dev/null || echo "no pkg"
 
       - name: Upload
         if: always()
@@ -109,5 +119,6 @@ jobs:
             ICON0.PNG
             PIC0.PNG
             PIC1.PNG
+            PREVIEW*.PNG
             pkgbuild/**
           if-no-files-found: warn
