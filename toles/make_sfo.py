@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate PS3 PARAM.SFO file."""
+"""Generate a PS3 PARAM.SFO file."""
 import struct
 import sys
 
@@ -26,14 +26,13 @@ def make_sfo(entries):
         key_table += b'\x00'
 
     header = struct.pack('<IIIII',
-        0x46535000,
-        0x00000101,
+        0x46535000,  # SFO magic
+        0x00000101,  # version
         20 + len(entry_data),
         20 + len(entry_data) + len(key_table),
         len(entries))
 
     return header + entry_data + key_table + data_table
-
 
 if __name__ == '__main__':
     out = sys.argv[1] if len(sys.argv) > 1 else 'PARAM.SFO'
