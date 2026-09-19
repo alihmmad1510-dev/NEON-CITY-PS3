@@ -34,37 +34,8 @@ $(TARGET).self: $(TARGET).elf
 		$(MAKE_SELF) $(TARGET).elf $(TARGET).self; \
 	else cp $(TARGET).elf $(TARGET).self; fi
 
-# بناء PKG
-pkg: $(TARGET).self
-	@echo "=== Building PKG ==="
-	@rm -rf pkg_build $(TARGET).pkg
-	@mkdir -p pkg_build/USRDIR
-	@cp $(TARGET).self pkg_build/USRDIR/EBOOT.BIN
-	@if [ -f $(PSL1GHT)/bin/sfo.py ]; then \
-		echo "--- Creating PARAM.SFO ---"; \
-		python3 $(PSL1GHT)/bin/sfo.py \
-			--add-contents "TITLE=Neon City" \
-			--add-contents "TITLE_ID=NEONCITY1" \
-			--add-contents "VERSION=01.00" \
-			--add-contents "APP_VER=01.00" \
-			--add-contents "CATEGORY=HG" \
-			--add-contents "BOOT_FILE=/USRDIR/EBOOT.BIN" \
-			pkg_build/PARAM.SFO || echo "sfo.py failed"; \
-	fi
-	@if [ -f $(PSL1GHT)/bin/pkg.py ]; then \
-		echo "--- Creating PKG ---"; \
-		python3 $(PSL1GHT)/bin/pkg.py \
-			--contentid UP0001-NEONCITY1_00-NEONCITY000000001 \
-			pkg_build/ $(TARGET).pkg || \
-		python3 $(PSL1GHT)/bin/pkg.py \
-			UP0001-NEONCITY1_00-NEONCITY000000001 \
-			pkg_build/ $(TARGET).pkg || \
-		echo "pkg.py failed - trying alt"; \
-	fi
-	@ls -la $(TARGET).pkg 2>/dev/null || echo "no pkg"
-
 clean:
-	rm -f $(OBJ) $(TARGET).elf $(TARGET).self $(TARGET).pkg
-	rm -rf pkg_build
+	rm -f $(OBJ) $(TARGET).elf $(TARGET).self $(TARGET).fself $(TARGET).pkg
+	rm -rf pkgbuild
 
-.PHONY: all pkg clean
+.PHONY: all clean
