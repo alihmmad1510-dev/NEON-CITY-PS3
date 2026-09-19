@@ -1,8 +1,7 @@
 # =====================================================================
 #  FILE: .github/workflows/build.yml
-#  PROJECT: NEON CITY ULTRA v3
-#  DESCRIPTION: Build SELF + PKG with icons (~3MB)
-#  NOTE: python tools in "toles" folder
+#  PROJECT: NEON CITY ULTRA v4
+#  DESCRIPTION: Build SELF + PKG (~45MB) with wallpapers
 # =====================================================================
 
 name: Build NEON CITY PKG
@@ -27,15 +26,6 @@ jobs:
         run: |
           wget -q https://github.com/bucanero/ps3toolchain/releases/download/ubuntu-latest-fad3b5fb/ps3dev-ubuntu-latest-2020-08-31.tar.gz
           tar xzf ps3dev-ubuntu-latest-2020-08-31.tar.gz
-
-      - name: Show repo files
-        run: |
-          echo "=== repo root ==="
-          ls -la
-          echo "=== toles folder ==="
-          ls -la toles/ 2>/dev/null || echo "no toles folder"
-          echo "=== tools folder ==="
-          ls -la tools/ 2>/dev/null || echo "no tools folder"
 
       - name: Build SELF
         run: make all
@@ -66,9 +56,11 @@ jobs:
       - name: Prepare PKG structure
         run: |
           mkdir -p pkgbuild/USRDIR
+          mkdir -p pkgbuild/USRDIR/wallpapers
+          mkdir -p pkgbuild/USRDIR/previews
           cp neoncity.fself pkgbuild/USRDIR/EBOOT.BIN
 
-          # لو المجلد اسمه toles استخدمه، لو tools استخدمه
+          # detect python folder
           PYD="toles"
           if [ ! -f "$PYD/make_sfo.py" ]; then
             if [ -f "tools/make_sfo.py" ]; then PYD="tools"; fi
@@ -76,15 +68,17 @@ jobs:
           echo "Using python folder: $PYD"
 
           python3 $PYD/make_sfo.py pkgbuild/PARAM.SFO || echo "sfo skipped"
-          echo "=== Generating images ==="
+          echo "=== Generating images (PNG + BMP) ==="
           OUT_DIR=$PWD python3 $PYD/make_icons.py
+
           cp ICON0.PNG pkgbuild/ICON0.PNG
           cp PIC0.PNG  pkgbuild/PIC0.PNG
           cp PIC1.PNG  pkgbuild/PIC1.PNG
-          mkdir -p pkgbuild/USRDIR/previews
           cp PREVIEW*.PNG pkgbuild/USRDIR/previews/ 2>/dev/null || true
+          cp WALLPAPER*.BMP pkgbuild/USRDIR/wallpapers/ 2>/dev/null || true
+
           echo "=== PKG contents ==="
-          find pkgbuild -type f
+          find pkgbuild -type f -exec ls -lh {} \;
           echo "=== Total size ==="
           du -sh pkgbuild/
 
@@ -115,11 +109,12 @@ jobs:
         if: always()
         run: |
           echo "=== All outputs ==="
-          ls -la ${{ github.workspace }}/*.self \
+          ls -lh ${{ github.workspace }}/*.self \
                  ${{ github.workspace }}/*.elf \
                  ${{ github.workspace }}/*.fself \
                  ${{ github.workspace }}/*.pkg \
-                 ${{ github.workspace }}/*.PNG 2>/dev/null || true
+                 ${{ github.workspace }}/*.PNG \
+                 ${{ github.workspace }}/*.BMP 2>/dev/null || true
           echo ""
           echo "=== PKG size ==="
           du -h ${{ github.workspace }}/neoncity.pkg 2>/dev/null || echo "no pkg"
@@ -138,5 +133,6 @@ jobs:
             PIC0.PNG
             PIC1.PNG
             PREVIEW*.PNG
+            WALLPAPER*.BMP
             pkgbuild/**
           if-no-files-found: warn
