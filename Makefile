@@ -1,7 +1,7 @@
 # =====================================================================
 #  FILE: Makefile
 #  PROJECT: NEON CITY ULTRA v4
-#  DESCRIPTION: Build with 20 embedded textures → EBOOT.BIN ≈ 60MB
+#  DESCRIPTION: Links 60MB of textures via .incbin assembly
 # =====================================================================
 
 .RECIPEPREFIX = >
@@ -16,16 +16,13 @@ SRC_ASSETS := src/assets.c
 OBJ_MAIN   := src/main.o
 OBJ_ASSETS := src/assets.o
 
-TEXTURE_PNGS := $(wildcard texture*.png)
-TEXTURE_OBJS := $(TEXTURE_PNGS:.png=.o)
+# Assembly files (generated in workflow) → objects
+TEXTURE_SRCS := $(wildcard texture*.S)
+TEXTURE_OBJS := $(TEXTURE_SRCS:.S=.o)
 
 PPU_GCC := $(shell find $(PS3DEV) -name "ppu-gcc" -type f 2>/dev/null | head -1)
 ifeq ($(strip $(PPU_GCC)),)
   PPU_GCC := $(shell find $(PS3DEV) -name "powerpc64-ps3-elf-gcc" -type f 2>/dev/null | head -1)
-endif
-PPU_OBJCOPY := $(shell find $(PS3DEV) -name "ppu-objcopy" -type f 2>/dev/null | head -1)
-ifeq ($(strip $(PPU_OBJCOPY)),)
-  PPU_OBJCOPY := $(shell find $(PS3DEV) -name "powerpc64-ps3-elf-objcopy" -type f 2>/dev/null | head -1)
 endif
 MAKE_SELF := $(shell find $(PS3DEV) -name "make_self" -type f 2>/dev/null | head -1)
 
@@ -40,12 +37,10 @@ LIBS    := -ltiny3d -lrsx -lgcm_sys -lio -lsysutil -lsysmodule -lfont3d -lm -lne
 
 all: $(TARGET).self
 
-# Convert each PNG to an object file (no -B flag)
-%.o: %.png
-> @echo "  [OBJCOPY] $<"
-> $(PPU_OBJCOPY) -I binary -O elf64-powerpc \
->   --rename-section .data=.rodata,alloc,load,readonly,data,contents \
->   $< $@
+# Compile .S assembly (uses .incbin to embed PNG data)
+%.o: %.S
+> @echo "  [ASM] $<"
+> $(PPU_GCC) -c $< -o $@
 > @ls -lh $@
 
 $(OBJ_MAIN): $(SRC_MAIN)
@@ -72,7 +67,7 @@ $(TARGET).self: $(TARGET).elf
 clean:
 > rm -f $(OBJ_MAIN) $(OBJ_ASSETS) $(TEXTURE_OBJS)
 > rm -f $(TARGET).elf $(TARGET).self $(TARGET).fself $(TARGET).pkg
-> rm -f texture*.png
+> rm -f texture*.png texture*.S
 > rm -rf pkgbuild
 
 .PHONY: all clean
