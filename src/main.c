@@ -1,6 +1,7 @@
 /* =====================================================================
  *   NEON CITY: ULTRA - PS3 Homebrew
- *   Procedural Textures + Procedural Audio + Full 3D
+ *   Procedural Textures + Full 3D + Particles + Day/Night
+ *   (Audio removed — not supported by this toolchain version)
  * ===================================================================== */
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,7 +15,6 @@
 #include <sysmodule/sysmodule.h>
 #include <io/pad.h>
 #include <sys/time.h>
-#include <audio/audio.h>
 
 #include <tiny3d.h>
 #include <libfont.h>
@@ -22,26 +22,14 @@
 SYS_PROCESS_PARAM(1001, 0x100000)
 
 /* ============================================================
- *  ضمان تعريف الدوال الناقصة (weak stubs)
- *  لو المكتبة عندها النسخ الحقيقية → تُستخدم هي
- *  لو مش عندها → بتاعتنا الفارغة تُستخدم
+ *  Weak stubs للدوال الناقصة
  * ============================================================ */
-__attribute__((weak)) void tiny3d_TextureFormat(int f)           { (void)f; }
-__attribute__((weak)) void tiny3d_TextureEnable(void)            { }
-__attribute__((weak)) void tiny3d_TextureDisable(void)           { }
-__attribute__((weak)) void tiny3d_TextureFilter(int a, int b)    { (void)a; (void)b; }
-__attribute__((weak)) void tiny3d_TextureWrap(int a, int b)      { (void)a; (void)b; }
-__attribute__((weak)) void tiny3d_TextureBlend(int b)            { (void)b; }
+__attribute__((weak)) void tiny3d_TextureFormat(int f)        { (void)f; }
+__attribute__((weak)) void tiny3d_TextureEnable(void)         { }
+__attribute__((weak)) void tiny3d_TextureDisable(void)        { }
 
-/* ثوابت الـ texture — لو مش موجودة نعرّفها */
 #ifndef TINY3D_TEX_FORMAT_A8R8G8B8
 #define TINY3D_TEX_FORMAT_A8R8G8B8  0x85
-#endif
-#ifndef TINY3D_TEX_FILTER_LINEAR
-#define TINY3D_TEX_FILTER_LINEAR    1
-#endif
-#ifndef TINY3D_TEX_WRAP_CLAMP
-#define TINY3D_TEX_WRAP_CLAMP       1
 #endif
 
 /* ===================== Config ===================== */
@@ -53,11 +41,6 @@ __attribute__((weak)) void tiny3d_TextureBlend(int b)            { (void)b; }
 #define MAX_AI  12
 #define MAX_TREE 60
 #define MAX_PAR 80
-
-/* ===================== Audio (raw u32) ===================== */
-static u32   g_audioPort = 0;
-static int   g_audioOK   = 0;
-static float g_enginePhase = 0.0f;
 
 /* ===================== Texture ===================== */
 typedef struct {
@@ -271,15 +254,10 @@ static void tex_draw_road(Tex *t){
     }
 }
 
-/* رفع texture على GPU باستخدام tiny3d_TextureOffset */
 static void tex_upload(Tex *t){
-    /* نجهز pngData-like struct */
     t->png.width   = t->w;
     t->png.height  = t->h;
     t->png.bmp_out = t->pixels;
-
-    /* نستخدم دالة tiny3d الرسمية للـ upload */
-    /* tiny3d_TextureOffset بتاخد void* — بنبعت pointer لـ png */
     tiny3d_TextureOffset(&t->png);
     t->ok = 1;
 }
@@ -352,7 +330,6 @@ static void draw_rect2d(float x,float y,float w,float h,u32 col){
     draw_quad2d(x,y,x+w,y,x+w,y+h,x,y+h,col);
 }
 
-/* Texture quad في 3D */
 static void draw_tex_face(Tex *t,
                           float x1,float y1,float z1,float u1,float v1,
                           float x2,float y2,float z2,float u2,float v2,
@@ -375,13 +352,10 @@ static void draw_tex_face(Tex *t,
         tiny3d_VertexPos(pa.x,pa.y,pa.z);
         tiny3d_VertexColor(col);
         tiny3d_VertexTexture2(u1, v1);
-
         tiny3d_VertexPos(pb.x,pb.y,pb.z);
         tiny3d_VertexTexture2(u2, v2);
-
         tiny3d_VertexPos(pc.x,pc.y,pc.z);
         tiny3d_VertexTexture2(u3, v3);
-
         tiny3d_VertexPos(pd.x,pd.y,pd.z);
         tiny3d_VertexTexture2(u4, v4);
         tiny3d_End();
@@ -411,7 +385,6 @@ static void draw_billboard(Tex *t, float wx, float wy, float wz,
         ax, y1, az,  0.0f, 0.0f, col);
 }
 
-/* box بـ texture على الوجه الأمامي فقط */
 static void draw_3d_box(float cx,float cy,float cz,float w,float h,float depth,
                         u32 col, Tex *tex){
     float hw=w*0.5f, hd=depth*0.5f;
@@ -423,31 +396,26 @@ static void draw_3d_box(float cx,float cy,float cz,float w,float h,float depth,
 
     SP pa,pb,pc,pd;
 
-    /* فوق */
     project(x0,y1,z0,&pa); project(x1,y1,z0,&pb);
     project(x1,y1,z1,&pc); project(x0,y1,z1,&pd);
     if (pa.vis&&pb.vis&&pc.vis&&pd.vis)
         draw_quad2d(pa.x,pa.y,pb.x,pb.y,pc.x,pc.y,pd.x,pd.y,top);
 
-    /* خلف */
     project(x0,y0,z1,&pa); project(x1,y0,z1,&pb);
     project(x1,y1,z1,&pc); project(x0,y1,z1,&pd);
     if (pa.vis&&pb.vis&&pc.vis&&pd.vis)
         draw_quad2d(pa.x,pa.y,pb.x,pb.y,pc.x,pc.y,pd.x,pd.y,side);
 
-    /* يمين */
     project(x1,y0,z0,&pa); project(x0,y0,z0,&pb);
     project(x0,y1,z0,&pc); project(x1,y1,z0,&pd);
     if (pa.vis&&pb.vis&&pc.vis&&pd.vis)
         draw_quad2d(pa.x,pa.y,pb.x,pb.y,pc.x,pc.y,pd.x,pd.y,dark);
 
-    /* يسار */
     project(x0,y0,z0,&pa); project(x0,y0,z1,&pb);
     project(x0,y1,z1,&pc); project(x0,y1,z0,&pd);
     if (pa.vis&&pb.vis&&pc.vis&&pd.vis)
         draw_quad2d(pa.x,pa.y,pb.x,pb.y,pc.x,pc.y,pd.x,pd.y,dark);
 
-    /* أمام بـ texture */
     if (tex && tex->ok){
         draw_tex_face(tex,
             x0, y0, z0,  0.0f, 1.0f,
@@ -591,64 +559,6 @@ static int hit_bld(float x,float z,float r){
     return 0;
 }
 
-/* ===================== Audio ===================== */
-static short a_buf[4][1024*2];
-
-static void audio_init(void){
-    if (audioInit() != 0) return;
-    audioPortParam p; memset(&p,0,sizeof(p));
-    p.numChannels = 2;
-    p.numBlocks   = 4;
-    p.attrib      = 0;
-    p.level       = 1.0f;
-    if (audioPortOpen(&p, &g_audioPort) != 0) return;
-    audioPortStart(g_audioPort);
-    g_audioOK = 1;
-}
-
-static void audio_shutdown(void){
-    if (!g_audioOK) return;
-    audioPortStop(g_audioPort);
-    audioPortClose(g_audioPort);
-    audioQuit();
-    g_audioOK = 0;
-}
-
-static void audio_fill(short *out){
-    float freq, amp;
-    float spd = fabsf(p_speed);
-    freq = 55.0f + spd*4.5f;
-    amp  = 0.05f + spd*0.006f;
-    if (amp > 0.35f) amp = 0.35f;
-
-    int boost = ((pad_btns()&BTN_R1) && p_boost > 0.05f);
-    float boostAmp = boost ? 0.15f : 0.0f;
-
-    for (int i=0;i<1024;i++){
-        g_enginePhase += freq/48000.0f;
-        if (g_enginePhase > 1.0f) g_enginePhase -= 1.0f;
-        float sq = (g_enginePhase < 0.5f) ? 1.0f : -1.0f;
-        float s  = sq * amp;
-        if (boostAmp > 0.0f){
-            float noise = ((rng() & 0xFFFF)/32768.0f - 1.0f);
-            s += noise * boostAmp;
-        }
-        short s16 = (short)(s * 32000.0f);
-        *out++ = s16;
-        *out++ = s16;
-    }
-}
-
-extern int audioPortSend(u32 port, void *buffer, u32 size);
-
-static void audio_pump(void){
-    if (!g_audioOK) return;
-    static int bi = 0;
-    audio_fill(a_buf[bi]);
-    if (audioPortSend(g_audioPort, a_buf[bi], 1024*2*sizeof(short)) == 0)
-        bi = (bi+1) % 4;
-}
-
 /* ===================== Update ===================== */
 static void update(float dt){
     if (!g_padReady) return;
@@ -740,19 +650,16 @@ static void render(void){
         last_x = p_x; last_z = p_z;
     }
 
-    /* Sky */
     draw_rect2d(0, 0, SCR_W, SCR_H*0.58f, sky);
     float sY = sinf((g_timeOfDay - 0.25f) * 6.2831853f);
     u32 horizon = (sY > 0) ? 0xFFBBCCDDu : 0xFF223344u;
     draw_rect2d(0, SCR_H*0.58f, SCR_W, 6, horizon);
 
-    /* Ground */
     int bI = (int)(p_x/60.0f), bJ = (int)(p_z/60.0f);
     for (int i=-4;i<=4;i++)
         for (int j=-4;j<=4;j++)
             draw_ground_tex((bI+i)*60.0f, (bJ+j)*60.0f, 60.0f, &tex_road);
 
-    /* Buildings sorted */
     int ord[MAX_BLD];
     float dist[MAX_BLD];
     for (int i=0;i<num_bld;i++){
@@ -806,7 +713,6 @@ static void render(void){
     draw_rect2d(95, SCR_H - 73, 220, 16, 0xFF333333u);
     draw_rect2d(95, SCR_H - 73, p_boost*220.0f, 16, 0xFFFF6B35u);
 
-    /* Minimap */
     {
         int mx = SCR_W - 200, my = 20, ms = 180;
         draw_rect2d(mx-2, my-2, ms+4, ms+4, 0xFFFFCC00u);
@@ -837,7 +743,6 @@ static void render(void){
         draw_rect2d(cxm-4, cym-4, 8, 8, 0xFFFFCC00u);
     }
 
-    /* Clock */
     int hours = (int)((g_timeOfDay*24.0f) + 6.0f) % 24;
     int minutes = (int)((((g_timeOfDay*24.0f) + 6.0f) - (float)hours) * 60.0f);
     sprintf(buf, "%02d:%02d", hours, minutes);
@@ -867,7 +772,6 @@ int main(int argc, char *argv[]){
     if (tiny3d_Init(1024*1024) != 0) return 1;
     ResetFont();
 
-    audio_init();
     textures_init();
 
     p_x = 0.0f; p_z = 0.0f; p_heading = 0.0f;
@@ -888,12 +792,10 @@ int main(int argc, char *argv[]){
         if (g_padReady && (pad_btns() & BTN_SELECT)) g_running = 0;
 
         update(1.0f/60.0f);
-        audio_pump();
         render();
         tiny3d_Flip();
     }
 
-    audio_shutdown();
     ioPadEnd();
     tiny3d_Exit();
     return 0;
