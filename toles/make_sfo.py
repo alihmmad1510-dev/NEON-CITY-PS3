@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # =====================================================================
-#  FILE: tools/make_sfo.py
-#  PROJECT: NEON CITY ULTRA v3
+#  FILE: toles/make_sfo.py
+#  PROJECT: NEON CITY ULTRA v4
 #  DESCRIPTION: Generate PS3 PARAM.SFO file
 # =====================================================================
 
@@ -13,7 +13,6 @@ def make_sfo(entries):
     key_table = b''
     data_table = b''
     entry_data = b''
-
     for key, (fmt, val, max_len) in entries:
         key_off = len(key_table)
         key_table += key.encode('ascii') + b'\x00'
@@ -24,17 +23,13 @@ def make_sfo(entries):
         data_off = len(data_table)
         entry_data += struct.pack('<HHIII', key_off, fmt, len(val_bin), max_len, data_off)
         data_table += val_bin + b'\x00' * (max_len - len(val_bin))
-
     while len(key_table) % 4 != 0:
         key_table += b'\x00'
-
     header = struct.pack('<IIIII',
-        0x46535000,
-        0x00000101,
+        0x46535000, 0x00000101,
         20 + len(entry_data),
         20 + len(entry_data) + len(key_table),
         len(entries))
-
     return header + entry_data + key_table + data_table
 
 
