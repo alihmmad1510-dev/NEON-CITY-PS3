@@ -1,10 +1,10 @@
-name: Build NEON CITY
+name: Build NEON CITY PKG
 on: [push, workflow_dispatch]
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -13,7 +13,8 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3 libelf-dev libtool-bin wget
+          sudo apt-get install -y python3 python3-pip libelf-dev libtool-bin wget git
+          pip3 install pycryptodome cryptography
 
       - name: Download toolchain
         run: |
@@ -26,32 +27,104 @@ jobs:
       - name: Show outputs
         run: ls -la neoncity.*
 
-      - name: Make FSELF (final EBOOT)
+      - name: Make FSELF
         run: |
           if [ -f ps3dev/bin/make_fself ]; then
             chmod +x ps3dev/bin/make_fself
-            ps3dev/bin/make_fself neoncity.elf EBOOT.BIN
-            echo "✅ FSELF created via make_fself"
+            ps3dev/bin/make_fself neoncity.elf neoncity.fself
+            echo "✅ FSELF created"
           else
-            cp neoncity.self EBOOT.BIN
-            echo "⚠️ make_fself not found — using self as EBOOT.BIN"
+            cp neoncity.self neoncity.fself
+            echo "⚠️ make_fself missing, using self"
           fi
-          ls -la EBOOT.BIN
 
-      - name: Create HDD folder structure
+      - name: Try multiple ps3py forks
+        id: get_ps3py
         run: |
-          mkdir -p build_out/USRDIR
-          cp EBOOT.BIN build_out/USRDIR/EBOOT.BIN
-          python3 tools/make_sfo.py build_out/PARAM.SFO || echo "sfo skipped"
-          ls -la build_out/
+          REPOS=(
+            "bucanero/ps3py"
+            "h0wdy/ps3py"
+            "ChrisNonyminus/ps3py"
+            "drme/ps3py"
+            "multiparts/ps3py"
+            "TheDiamondDove/ps3py"
+          )
+          OK=0
+          for REPO in "${REPOS[@]}"; do
+            echo "Trying: $REPO"
+            if git clone --depth 1 "https://github.com/$REPO.git" /tmp/ps3py 2>/dev/null; then
+              echo "✅ Cloned: $REPO"
+              ls /tmp/ps3py/src/ 2>/dev/null | head
+              OK=1
+              break
+            fi
+          done
+          if [ $OK -eq 0 ]; then
+            echo "❌ All forks failed. Trying ps3dev GitLab..."
+            git clone --depth 1 https://gitlab.com/ps3dev/ps3py.git /tmp/ps3py 2>/dev/null && \
+              echo "✅ Cloned from GitLab" || echo "❌ GitLab failed too"
+          fi
+          echo "ps3py_available=$([ -d /tmp/ps3py ] && echo yes || echo no)" >> $GITHUB_OUTPUT
+
+      - name: Prepare PKG structure
+        run: |
+          mkdir -p pkgbuild/USRDIR
+          cp neoncity.fself pkgbuild/USRDIR/EBOOT.BIN
+          python3 tools/make_sfo.py pkgbuild/PARAM.SFO || echo "sfo failed"
+          ls -la pkgbuild/ pkgbuild/USRDIR/
+
+      - name: Show ps3py contents
+        if: always()
+        run: |
+          if [ -d /tmp/ps3py ]; then
+            echo "=== /tmp/ps3py ==="
+            find /tmp/ps3py -maxdepth 2 -type f -name "*.py" | head -20
+          fi
+
+      - name: Build PKG
+        continue-on-error: true
+        run: |
+          set +e
+          if [ ! -d /tmp/ps3py ]; then
+            echo "❌ ps3py not available"
+            exit 0
+          fi
+          cd /tmp/ps3py/src 2>/dev/null || cd /tmp/ps3py 2>/dev/null
+          echo "=== Current dir: $(pwd) ==="
+          ls -la
+
+          BUILD_DIR="${{ github.workspace }}/pkgbuild"
+          OUT_PKG="${{ github.workspace }}/neoncity.pkg"
+          CID="UP0001-NEONCITY1_00-NEONCITY00000001"
+
+          if [ -f pkg.py ]; then
+            echo "=== Trying pkg.py variants ==="
+            # Variant 1: modern with --contentid
+            python3 pkg.py --contentid "$CID" "$BUILD_DIR" "$OUT_PKG" && echo "V1 OK" && ls -la "$OUT_PKG" && exit 0
+            # Variant 2: positional args
+            python3 pkg.py "$CID" "$BUILD_DIR" "$OUT_PKG" && echo "V2 OK" && ls -la "$OUT_PKG" && exit 0
+            # Variant 3: --dir
+            python3 pkg.py --dir "$BUILD_DIR" --out "$OUT_PKG" --cid "$CID" && echo "V3 OK" && ls -la "$OUT_PKG" && exit 0
+            echo "❌ All pkg.py variants failed"
+          fi
+
+          if [ -f make_pkg.py ]; then
+            echo "=== Trying make_pkg.py ==="
+            python3 make_pkg.py "$BUILD_DIR" "$OUT_PKG" && ls -la "$OUT_PKG" && exit 0
+          fi
+
+          echo "❌ No suitable PKG tool found"
 
       - name: Final listing
         if: always()
         run: |
-          echo "=== Files ready for PS3 ==="
-          ls -la EBOOT.BIN neoncity.self neoncity.elf 2>/dev/null
-          echo "=== Folder structure ==="
-          find build_out -type f 2>/dev/null
+          echo "=== All outputs ==="
+          ls -la ${{ github.workspace }}/*.self \
+                 ${{ github.workspace }}/*.elf \
+                 ${{ github.workspace }}/*.fself \
+                 ${{ github.workspace }}/*.pkg 2>/dev/null || true
+          echo "=== pkgbuild ==="
+          find pkgbuild -type f 2>/dev/null
 
       - name: Upload
         if: always()
@@ -59,8 +132,9 @@ jobs:
         with:
           name: neoncity-build
           path: |
-            EBOOT.BIN
             neoncity.self
             neoncity.elf
-            build_out/**
+            neoncity.fself
+            neoncity.pkg
+            pkgbuild/**
           if-no-files-found: warn
