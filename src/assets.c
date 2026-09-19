@@ -1,13 +1,11 @@
 /* =====================================================================
  *  FILE: src/assets.c
  *  PROJECT: NEON CITY ULTRA v4
- *  DESCRIPTION: Exposes embedded 1024x1024 textures to the game code.
- *    20 textures are linked directly into the ELF by objcopy.
+ *  DESCRIPTION: 20 embedded 1024x1024 textures (linked from .S files)
  * ===================================================================== */
 
 #include <ppu-types.h>
 
-/* External symbols created by ppu-objcopy from each textureNN.png */
 #define DECL_TEX(N) \
     extern const u8 _binary_texture##N##_png_start[]; \
     extern const u8 _binary_texture##N##_png_end[];
@@ -41,6 +39,6 @@ void assets_init(void) {
         g_tex[i].size = (u32)(g_tex[i].end - g_tex[i].data);
 }
 
-u32  assets_count(void)           { return 20; }
-const u8* assets_data(int i)      { return (i>=0 && i<20) ? g_tex[i].data : 0; }
-u32  assets_size(int i)           { return (i>=0 && i<20) ? g_tex[i].size : 0; }
+u32  assets_count(void)      { return 20; }
+const u8* assets_data(int i) { return (i>=0 && i<20) ? g_tex[i].data : 0; }
+u32  assets_size(int i)      { return (i>=0 && i<20) ? g_tex[i].size : 0; }
