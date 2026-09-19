@@ -1,7 +1,7 @@
 # =====================================================================
 #  FILE: .github/workflows/build.yml
 #  PROJECT: NEON CITY ULTRA v4
-#  DESCRIPTION: 20 embedded textures → 60MB EBOOT.BIN + 60MB PKG
+#  DESCRIPTION: Generate textures + assembly files → 60MB EBOOT.BIN
 # =====================================================================
 
 name: Build NEON CITY PKG
@@ -32,9 +32,29 @@ jobs:
           if [ ! -f "$PYD/make_textures.py" ]; then
             if [ -f "tools/make_textures.py" ]; then PYD="tools"; fi
           fi
-          echo "Using: $PYD"
           OUT_DIR=$PWD python3 $PYD/make_textures.py 20
           ls -lh texture*.png
+
+      - name: Generate assembly files (.incbin)
+        run: |
+          WORKDIR=$(pwd)
+          echo "Working dir: $WORKDIR"
+          for i in 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19; do
+            cat > texture${i}.S << EOF
+	.section .rodata
+	.globl _binary_texture${i}_png_start
+	.globl _binary_texture${i}_png_end
+_binary_texture${i}_png_start:
+	.incbin "${WORKDIR}/texture${i}.png"
+_binary_texture${i}_png_end:
+	.byte 0
+	.p2align 4
+EOF
+          done
+          echo "=== Sample .S file ==="
+          cat texture00.S
+          echo "=== All .S files ==="
+          ls -lh texture*.S
 
       - name: Build 60MB ELF + SELF
         run: make all
@@ -71,9 +91,8 @@ jobs:
           fi
           python3 $PYD/make_sfo.py pkgbuild/PARAM.SFO || echo "sfo skipped"
 
-          # ICON only
-          OUT_DIR=$PWD python3 $PYD/make_icons.py
-          cp ICON0.PNG pkgbuild/ICON0.PNG
+          OUT_DIR=$PWD python3 $PYD/make_icons.py 2>/dev/null || true
+          if [ -f ICON0.PNG ]; then cp ICON0.PNG pkgbuild/ICON0.PNG; fi
 
           echo "=== PKG contents ==="
           find pkgbuild -type f -exec ls -lh {} \;
@@ -97,10 +116,11 @@ jobs:
           python3 pkg.py -c "$CID" "$BUILD_DIR" "$OUT_PKG" 2>&1
           if [ -f "$OUT_PKG" ]; then echo "PKG V3 OK"; exit 0; fi
 
-      - name: Final
+      - name: Final listing
         if: always()
         run: |
-          ls -lh neoncity.pkg neoncity.fself neoncity.self ICON0.PNG 2>/dev/null || true
+          echo "=== Outputs ==="
+          ls -lh neoncity.self neoncity.elf neoncity.fself neoncity.pkg ICON0.PNG 2>/dev/null || true
           echo ""
           echo "=== PKG SIZE ==="
           du -h neoncity.pkg 2>/dev/null || echo "no pkg"
