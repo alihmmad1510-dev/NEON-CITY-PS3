@@ -1,7 +1,7 @@
 # =====================================================================
-#  FILE: Makefil
+#  FILE: Makefile
 #  PROJECT: NEON CITY ULTRA v4
-#  DESCRIPTION: Links 60MB of textures via .incbin assembly
+#  DESCRIPTION: Build with 20 embedded textures (60MB ELF)
 # =====================================================================
 
 .RECIPEPREFIX = >
@@ -16,7 +16,6 @@ SRC_ASSETS := src/assets.c
 OBJ_MAIN   := src/main.o
 OBJ_ASSETS := src/assets.o
 
-# Hardcoded texture object files (no wildcard)
 TEXTURE_OBJS := texture00.o texture01.o texture02.o texture03.o texture04.o \
                 texture05.o texture06.o texture07.o texture08.o texture09.o \
                 texture10.o texture11.o texture12.o texture13.o texture14.o \
@@ -39,11 +38,9 @@ LIBS    := -ltiny3d -lrsx -lgcm_sys -lio -lsysutil -lsysmodule -lfont3d -lm -lne
 
 all: $(TARGET).self
 
-# Assembly rules
 texture%.o: texture%.S
 > @echo "  [ASM] $<"
 > $(PPU_GCC) -c $< -o $@
-> @ls -lh $@
 
 $(OBJ_MAIN): $(SRC_MAIN)
 > @mkdir -p src
