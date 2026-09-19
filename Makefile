@@ -1,23 +1,36 @@
 # =====================================================================
 #  FILE: Makefile
-#  PROJECT: NEON CITY ULTRA v3
-#  DESCRIPTION: PS3 Homebrew build script
+#  PROJECT: NEON CITY ULTRA v4
+#  DESCRIPTION: Links 60MB of embedded textures into the binary
 # =====================================================================
 
 .RECIPEPREFIX = >
 
-TARGET  := neoncity
-SRC     := src/main.c
-OBJ     := src/main.o
-PS3DEV  := $(CURDIR)/ps3dev
+TARGET   := neoncity
+PS3DEV   := $(CURDIR)/ps3dev
 export PSL1GHT := $(CURDIR)/ps3dev
 export PS3DEV  := $(CURDIR)/ps3dev
 
-PPU_GCC := $(shell find $(PS3DEV) -name "ppu-gcc" -type f 2>/dev/null | head -1)
+# Sources
+SRC_MAIN   := src/main.c
+SRC_ASSETS := src/assets.c
+OBJ_MAIN   := src/main.o
+OBJ_ASSETS := src/assets.o
+
+# Textures
+TEXTURE_PNGS := $(wildcard texture*.png)
+TEXTURE_OBJS := $(TEXTURE_PNGS:.png=.o)
+
+# Toolchain
+PPU_GCC     := $(shell find $(PS3DEV) -name "ppu-gcc" -type f 2>/dev/null | head -1)
 ifeq ($(strip $(PPU_GCC)),)
   PPU_GCC := $(shell find $(PS3DEV) -name "powerpc64-ps3-elf-gcc" -type f 2>/dev/null | head -1)
 endif
-MAKE_SELF := $(shell find $(PS3DEV) -name "make_self" -type f 2>/dev/null | head -1)
+PPU_OBJCOPY := $(shell find $(PS3DEV) -name "ppu-objcopy" -type f 2>/dev/null | head -1)
+ifeq ($(strip $(PPU_OBJCOPY)),)
+  PPU_OBJCOPY := $(shell find $(PS3DEV) -name "powerpc64-ps3-elf-objcopy" -type f 2>/dev/null | head -1)
+endif
+MAKE_SELF   := $(shell find $(PS3DEV) -name "make_self" -type f 2>/dev/null | head -1)
 
 PS3_INC  := $(shell find $(PS3DEV) -type d -path "*/ppu/include" 2>/dev/null | grep -v portlibs | head -1)
 PORT_INC := $(shell find $(PS3DEV) -type d -path "*portlibs/ppu/include" 2>/dev/null | head -1)
@@ -30,12 +43,25 @@ LIBS    := -ltiny3d -lrsx -lgcm_sys -lio -lsysutil -lsysmodule -lfont3d -lm -lne
 
 all: $(TARGET).self
 
-$(OBJ): $(SRC)
+# Convert each PNG to an object file
+%.o: %.png
+> @echo "  OBJCOPY $<"
+> $(PPU_OBJCOPY) -I binary -O elf64-powerpc -B powerpc:64 \
+>   --rename-section .data=.rodata,alloc,load,readonly,data,contents \
+>   $< $@
+
+$(OBJ_MAIN): $(SRC_MAIN)
 > @mkdir -p src
 > $(PPU_GCC) $(CFLAGS) -c $< -o $@
 
-$(TARGET).elf: $(OBJ)
-> $(PPU_GCC) $(OBJ) $(LDFLAGS) $(LIBS) -o $@
+$(OBJ_ASSETS): $(SRC_ASSETS)
+> @mkdir -p src
+> $(PPU_GCC) $(CFLAGS) -c $< -o $@
+
+$(TARGET).elf: $(OBJ_MAIN) $(OBJ_ASSETS) $(TEXTURE_OBJS)
+> @echo "=== Linking all objects ==="
+> $(PPU_GCC) $(OBJ_MAIN) $(OBJ_ASSETS) $(TEXTURE_OBJS) $(LDFLAGS) $(LIBS) -o $@
+> ls -lh $@
 
 $(TARGET).self: $(TARGET).elf
 > @if [ -n "$(MAKE_SELF)" ]; then \
@@ -43,9 +69,12 @@ $(TARGET).self: $(TARGET).elf
 > else \
 >   cp $(TARGET).elf $(TARGET).self; \
 > fi
+> ls -lh $@
 
 clean:
-> rm -f $(OBJ) $(TARGET).elf $(TARGET).self $(TARGET).fself $(TARGET).pkg
+> rm -f $(OBJ_MAIN) $(OBJ_ASSETS) $(TEXTURE_OBJS)
+> rm -f $(TARGET).elf $(TARGET).self $(TARGET).fself $(TARGET).pkg
+> rm -f texture*.png
 > rm -rf pkgbuild
 
 .PHONY: all clean
