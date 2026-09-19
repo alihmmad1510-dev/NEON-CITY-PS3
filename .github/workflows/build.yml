@@ -1,7 +1,7 @@
 # =====================================================================
 #  FILE: .github/workflows/build.yml
 #  PROJECT: NEON CITY ULTRA v4
-#  DESCRIPTION: Build with 20 embedded textures → EBOOT.BIN ≈ 60MB
+#  DESCRIPTION: 20 embedded textures → 60MB EBOOT.BIN + 60MB PKG
 # =====================================================================
 
 name: Build NEON CITY PKG
@@ -13,8 +13,7 @@ jobs:
     timeout-minutes: 40
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Install deps
         run: |
@@ -35,10 +34,9 @@ jobs:
           fi
           echo "Using: $PYD"
           OUT_DIR=$PWD python3 $PYD/make_textures.py 20
-          echo "=== Files ==="
           ls -lh texture*.png
 
-      - name: Build SELF (60MB with textures)
+      - name: Build 60MB ELF + SELF
         run: make all
 
       - name: Make FSELF
@@ -54,7 +52,7 @@ jobs:
       - name: Get ps3py
         run: |
           git clone --depth 1 --branch use-python3 https://github.com/sahlberg/PSL1GHT.git /tmp/psl1ght-py3
-          ls -la /tmp/psl1ght-py3/tools/ps3py/ || true
+          ls /tmp/psl1ght-py3/tools/ps3py/ 2>/dev/null | head || true
 
       - name: Build pkgcrypt
         continue-on-error: true
@@ -73,9 +71,9 @@ jobs:
           fi
           python3 $PYD/make_sfo.py pkgbuild/PARAM.SFO || echo "sfo skipped"
 
-          # Generate ICON0.PNG only
-          OUT_DIR=$PWD python3 $PYD/make_icons.py 2>/dev/null || true
-          if [ -f ICON0.PNG ]; then cp ICON0.PNG pkgbuild/ICON0.PNG; fi
+          # ICON only
+          OUT_DIR=$PWD python3 $PYD/make_icons.py
+          cp ICON0.PNG pkgbuild/ICON0.PNG
 
           echo "=== PKG contents ==="
           find pkgbuild -type f -exec ls -lh {} \;
@@ -99,21 +97,16 @@ jobs:
           python3 pkg.py -c "$CID" "$BUILD_DIR" "$OUT_PKG" 2>&1
           if [ -f "$OUT_PKG" ]; then echo "PKG V3 OK"; exit 0; fi
 
-      - name: Final listing
+      - name: Final
         if: always()
         run: |
-          echo "=== Outputs ==="
-          ls -lh ${{ github.workspace }}/*.self \
-                 ${{ github.workspace }}/*.elf \
-                 ${{ github.workspace }}/*.fself \
-                 ${{ github.workspace }}/*.pkg 2>/dev/null || true
+          ls -lh neoncity.pkg neoncity.fself neoncity.self ICON0.PNG 2>/dev/null || true
           echo ""
           echo "=== PKG SIZE ==="
-          du -h ${{ github.workspace }}/neoncity.pkg 2>/dev/null || echo "no pkg"
+          du -h neoncity.pkg 2>/dev/null || echo "no pkg"
 
-      - name: Upload
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
           name: neoncity-build
           path: |
