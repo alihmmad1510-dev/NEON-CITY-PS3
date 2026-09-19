@@ -2,8 +2,7 @@
 # =====================================================================
 #  FILE: toles/make_textures.py
 #  PROJECT: NEON CITY ULTRA v4
-#  DESCRIPTION: Generate 20 realistic 1024x1024 textures — total ~60MB
-#    These ARE used by the game as building/road/ground textures
+#  DESCRIPTION: Generate 20 x 1024x1024 procedural textures (~60MB)
 # =====================================================================
 
 import os
@@ -19,46 +18,46 @@ def gen_texture(idx):
     y, x = np.mgrid[0:H, 0:W].astype(np.float32)
     kind = idx % 10
 
-    if kind == 0:  # asphalt road
+    if kind == 0:
         n = np.random.randn(H, W) * 20
         r = 42 + n; g = 42 + n; b = 48 + n * 0.8
-    elif kind == 1:  # brick wall
+    elif kind == 1:
         bx = (x / 32).astype(int); by = (y / 16).astype(int)
         off = (bx % 2) * 16; xx = (x + off) % 32; yy = y % 16
         mortar = (xx < 2) | (yy < 2)
         r = np.where(mortar, 60, 165 + (bx*11 + by*7) % 40)
         g = np.where(mortar, 60, 85 + (bx*13 + by*3) % 30)
         b = np.where(mortar, 60, 65 + (bx*17 + by*5) % 20)
-    elif kind == 2:  # grass
+    elif kind == 2:
         n = np.random.randn(H, W) * 28
         r = 32 + n * 0.5; g = 95 + n; b = 32 + n * 0.5
-    elif kind == 3:  # concrete
+    elif kind == 3:
         n = np.random.randn(H, W) * 14
         r = 142 + n; g = 142 + n; b = 148 + n
-    elif kind == 4:  # wood
+    elif kind == 4:
         waves = np.sin(y/30)*20 + np.sin(x/50)*10
         n = np.random.randn(H, W) * 10
         r = 125 + waves + n; g = 72 + waves*0.5 + n; b = 42 + n
-    elif kind == 5:  # metal
+    elif kind == 5:
         grad = (x / W) * 50
         n = np.random.randn(H, W) * 6
         r = 105 + grad + n; g = 110 + grad + n; b = 118 + grad + n
-    elif kind == 6:  # marble
+    elif kind == 6:
         n1 = np.sin(x/100)*35; n2 = np.cos(y/80)*35
         base = 185 + n1 + n2
         r = base; g = base*0.98; b = base*1.02
-    elif kind == 7:  # tile
+    elif kind == 7:
         tx = (x/64).astype(int); ty = (y/64).astype(int)
         xx = x%64; yy = y%64
         grout = (xx < 2) | (yy < 2)
         r = np.where(grout, 100, 185 + (tx*7 + ty*3) % 40)
         g = np.where(grout, 100, 185 + (tx*11 + ty*5) % 40)
         b = np.where(grout, 100, 195 + (tx*13 + ty*17) % 40)
-    elif kind == 8:  # rust
+    elif kind == 8:
         n = np.random.randn(H, W) * 35
         spots = np.sin(x/15) * np.cos(y/12)
         r = 135 + n + spots*45; g = 75 + n*0.5 + spots*22; b = 45 + n*0.3
-    else:  # neon glow
+    else:
         n = np.random.randn(H, W) * 12
         r = 65 + n + np.sin(x/20)*35
         g = 45 + n + np.cos(y/25)*35
