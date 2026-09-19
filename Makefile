@@ -16,9 +16,11 @@ SRC_ASSETS := src/assets.c
 OBJ_MAIN   := src/main.o
 OBJ_ASSETS := src/assets.o
 
-# Assembly files (generated in workflow) → objects
-TEXTURE_SRCS := $(wildcard texture*.S)
-TEXTURE_OBJS := $(TEXTURE_SRCS:.S=.o)
+# Hardcoded texture object files (no wildcard)
+TEXTURE_OBJS := texture00.o texture01.o texture02.o texture03.o texture04.o \
+                texture05.o texture06.o texture07.o texture08.o texture09.o \
+                texture10.o texture11.o texture12.o texture13.o texture14.o \
+                texture15.o texture16.o texture17.o texture18.o texture19.o
 
 PPU_GCC := $(shell find $(PS3DEV) -name "ppu-gcc" -type f 2>/dev/null | head -1)
 ifeq ($(strip $(PPU_GCC)),)
@@ -37,8 +39,8 @@ LIBS    := -ltiny3d -lrsx -lgcm_sys -lio -lsysutil -lsysmodule -lfont3d -lm -lne
 
 all: $(TARGET).self
 
-# Compile .S assembly (uses .incbin to embed PNG data)
-%.o: %.S
+# Assembly rules
+texture%.o: texture%.S
 > @echo "  [ASM] $<"
 > $(PPU_GCC) -c $< -o $@
 > @ls -lh $@
