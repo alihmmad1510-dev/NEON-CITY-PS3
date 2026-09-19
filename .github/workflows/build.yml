@@ -1,7 +1,6 @@
 # =====================================================================
 #  FILE: .github/workflows/build.yml
-#  PROJECT: NEON CITY ULTRA v4
-#  DESCRIPTION: Build 60MB game with textures + ICON.PNG + WALLPAPER.PNG
+#  PROJECT: NEON CITY ULTRA v5
 # =====================================================================
 
 name: Build NEON CITY PKG
@@ -26,17 +25,15 @@ jobs:
           wget -q https://github.com/bucanero/ps3toolchain/releases/download/ubuntu-latest-fad3b5fb/ps3dev-ubuntu-latest-2020-08-31.tar.gz
           tar xzf ps3dev-ubuntu-latest-2020-08-31.tar.gz
 
-      - name: List repo files
+      - name: List repo
         run: |
-          echo "=== repo root ==="
-          ls -la
-          echo "=== toles ==="
-          ls -la toles/ 2>/dev/null || echo "no toles"
+          echo "=== Root ==="; ls -la
+          echo "=== models ==="; ls -la models/ 2>/dev/null || true
 
       - name: Generate 20 textures
         run: |
           OUT_DIR=$PWD python3 toles/make_textures.py 20
-          ls -lh texture*.png | head
+          ls texture*.png | head -3
 
       - name: Generate assembly files
         run: |
@@ -63,7 +60,7 @@ jobs:
           else
             cp neoncity.self neoncity.fself
           fi
-          ls -lh neoncity.fself neoncity.self
+          ls -lh neoncity.fself
 
       - name: Get ps3py
         run: |
@@ -75,19 +72,24 @@ jobs:
           cd /tmp/psl1ght-py3/tools/ps3py
           python3 setup.py build_ext --inplace 2>&1 | head -10 || true
 
-      - name: Prepare PKG structure
+      - name: Prepare PKG
         run: |
-          mkdir -p pkgbuild/USRDIR
+          mkdir -p pkgbuild/USRDIR/models
           cp neoncity.fself pkgbuild/USRDIR/EBOOT.BIN
 
-          python3 toles/make_sfo.py pkgbuild/PARAM.SFO || echo "sfo skipped"
+          if [ -d "models" ]; then
+            cp models/*.obj pkgbuild/USRDIR/models/ 2>/dev/null || true
+            cp models/*.mtl pkgbuild/USRDIR/models/ 2>/dev/null || true
+            echo "=== Models copied ==="
+            ls -lh pkgbuild/USRDIR/models/
+          fi
 
-          echo "=== Generating icons ==="
+          python3 toles/make_sfo.py pkgbuild/PARAM.SFO || true
+
           OUT_DIR=$PWD python3 toles/make_icons.py
-
-          if [ -f ICON0.PNG ]; then cp ICON0.PNG pkgbuild/ICON0.PNG; fi
-          if [ -f PIC0.PNG ];  then cp PIC0.PNG  pkgbuild/PIC0.PNG;  fi
-          if [ -f PIC1.PNG ];  then cp PIC1.PNG  pkgbuild/PIC1.PNG;  fi
+          [ -f ICON0.PNG ] && cp ICON0.PNG pkgbuild/ICON0.PNG
+          [ -f PIC0.PNG ]  && cp PIC0.PNG  pkgbuild/PIC0.PNG
+          [ -f PIC1.PNG ]  && cp PIC1.PNG  pkgbuild/PIC1.PNG
 
           echo "=== PKG contents ==="
           find pkgbuild -type f -exec ls -lh {} \;
@@ -101,15 +103,13 @@ jobs:
           OUT_PKG="${{ github.workspace }}/neoncity.pkg"
           CID="UP0001-NEONCITY1_00-NEONCITY00000001"
           python3 pkg.py --contentid "$CID" "$BUILD_DIR" "$OUT_PKG" 2>&1
-          if [ -f "$OUT_PKG" ]; then echo "PKG OK"; exit 0; fi
-          python3 pkg.py "$CID" "$BUILD_DIR" "$OUT_PKG" 2>&1 || true
+          [ -f "$OUT_PKG" ] && echo "PKG OK" || echo "PKG FAILED"
 
-      - name: Final listing
+      - name: Final
         if: always()
         run: |
-          ls -lh neoncity.pkg neoncity.fself neoncity.self ICON0.PNG PIC0.PNG PIC1.PNG 2>/dev/null || true
-          echo ""
-          du -h neoncity.pkg 2>/dev/null || echo "no pkg"
+          ls -lh neoncity.pkg neoncity.fself ICON0.PNG 2>/dev/null || true
+          du -h neoncity.pkg 2>/dev/null || true
 
       - uses: actions/upload-artifact@v4
         if: always()
