@@ -1,6 +1,6 @@
 /* =====================================================================
  *  FILE: src/assets.c
- *  PROJECT: NEON CITY ULTRA v4
+ *  PROJECT: NEON CITY ULTRA v5
  *  DESCRIPTION: 20 embedded 1024x1024 textures (linked from .S files)
  * ===================================================================== */
 
