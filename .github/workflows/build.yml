@@ -2,6 +2,7 @@
 #  FILE: .github/workflows/build.yml
 #  PROJECT: NEON CITY ULTRA v3
 #  DESCRIPTION: Build SELF + PKG with icons (~3MB)
+#  NOTE: python tools in "toles" folder
 # =====================================================================
 
 name: Build NEON CITY PKG
@@ -26,6 +27,15 @@ jobs:
         run: |
           wget -q https://github.com/bucanero/ps3toolchain/releases/download/ubuntu-latest-fad3b5fb/ps3dev-ubuntu-latest-2020-08-31.tar.gz
           tar xzf ps3dev-ubuntu-latest-2020-08-31.tar.gz
+
+      - name: Show repo files
+        run: |
+          echo "=== repo root ==="
+          ls -la
+          echo "=== toles folder ==="
+          ls -la toles/ 2>/dev/null || echo "no toles folder"
+          echo "=== tools folder ==="
+          ls -la tools/ 2>/dev/null || echo "no tools folder"
 
       - name: Build SELF
         run: make all
@@ -57,9 +67,17 @@ jobs:
         run: |
           mkdir -p pkgbuild/USRDIR
           cp neoncity.fself pkgbuild/USRDIR/EBOOT.BIN
-          python3 tools/make_sfo.py pkgbuild/PARAM.SFO || echo "sfo skipped"
+
+          # لو المجلد اسمه toles استخدمه، لو tools استخدمه
+          PYD="toles"
+          if [ ! -f "$PYD/make_sfo.py" ]; then
+            if [ -f "tools/make_sfo.py" ]; then PYD="tools"; fi
+          fi
+          echo "Using python folder: $PYD"
+
+          python3 $PYD/make_sfo.py pkgbuild/PARAM.SFO || echo "sfo skipped"
           echo "=== Generating images ==="
-          OUT_DIR=$PWD python3 tools/make_icons.py
+          OUT_DIR=$PWD python3 $PYD/make_icons.py
           cp ICON0.PNG pkgbuild/ICON0.PNG
           cp PIC0.PNG  pkgbuild/PIC0.PNG
           cp PIC1.PNG  pkgbuild/PIC1.PNG
