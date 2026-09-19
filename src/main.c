@@ -21,6 +21,29 @@
 
 SYS_PROCESS_PARAM(1001, 0x100000)
 
+/* ============================================================
+ *  ضمان تعريف الدوال الناقصة (weak stubs)
+ *  لو المكتبة عندها النسخ الحقيقية → تُستخدم هي
+ *  لو مش عندها → بتاعتنا الفارغة تُستخدم
+ * ============================================================ */
+__attribute__((weak)) void tiny3d_TextureFormat(int f)           { (void)f; }
+__attribute__((weak)) void tiny3d_TextureEnable(void)            { }
+__attribute__((weak)) void tiny3d_TextureDisable(void)           { }
+__attribute__((weak)) void tiny3d_TextureFilter(int a, int b)    { (void)a; (void)b; }
+__attribute__((weak)) void tiny3d_TextureWrap(int a, int b)      { (void)a; (void)b; }
+__attribute__((weak)) void tiny3d_TextureBlend(int b)            { (void)b; }
+
+/* ثوابت الـ texture — لو مش موجودة نعرّفها */
+#ifndef TINY3D_TEX_FORMAT_A8R8G8B8
+#define TINY3D_TEX_FORMAT_A8R8G8B8  0x85
+#endif
+#ifndef TINY3D_TEX_FILTER_LINEAR
+#define TINY3D_TEX_FILTER_LINEAR    1
+#endif
+#ifndef TINY3D_TEX_WRAP_CLAMP
+#define TINY3D_TEX_WRAP_CLAMP       1
+#endif
+
 /* ===================== Config ===================== */
 #define SCR_W 1280
 #define SCR_H 720
@@ -31,13 +54,25 @@ SYS_PROCESS_PARAM(1001, 0x100000)
 #define MAX_TREE 60
 #define MAX_PAR 80
 
-/* ===================== Audio port (raw u32) ===================== */
+/* ===================== Audio (raw u32) ===================== */
 static u32   g_audioPort = 0;
 static int   g_audioOK   = 0;
 static float g_enginePhase = 0.0f;
 
-/* ===================== Texture IDs ===================== */
-typedef struct { u32 offset; u16 w, h; int ok; u32 *pixels; } Tex;
+/* ===================== Texture ===================== */
+typedef struct {
+    u16 width;
+    u16 height;
+    u32 *bmp_out;
+} LocalPngData;
+
+typedef struct {
+    LocalPngData png;
+    u16 w, h;
+    int ok;
+    u32 *pixels;
+} Tex;
+
 static Tex tex_player, tex_car_red, tex_car_blue, tex_car_yel;
 static Tex tex_tree, tex_building, tex_road, tex_ped;
 
@@ -46,7 +81,6 @@ static int      g_running = 1;
 static padInfo  g_padInfo;
 static padData  g_padData;
 static int      g_padReady = 0;
-static u8       g_prevL2 = 0;
 
 static float p_x = 0, p_z = 0, p_heading = 0, p_speed = 0, p_boost = 1.0f;
 static float cam_yaw = 0, cam_pitch = 0.35f, cam_dist = 12.0f;
@@ -110,12 +144,10 @@ static float clampf(float v,float a,float b){ return v<a?a:(v>b?b:v); }
 
 /* =====================================================================
  *  PROCEDURAL TEXTURES
- *  بنرسم الصور بكسل بكسل في مصفوفة u32 ثم نرفعها كـ texture
  * ===================================================================== */
-
 static Tex tex_make(int w, int h){
     Tex t;
-    t.w = w; t.h = h; t.ok = 0; t.offset = 0;
+    t.w = w; t.h = h; t.ok = 0;
     t.pixels = (u32*)memalign(16, w*h*4);
     memset(t.pixels, 0, w*h*4);
     return t;
@@ -138,85 +170,62 @@ static void px_circle(Tex *t, int cx, int cy, int r, u32 c){
             if (x*x + y*y <= r*r) px_set(t, cx+x, cy+y, c);
 }
 
-/* ---- شخصية (لاعب/مشاة) ---- */
 static void tex_draw_person(Tex *t, u32 shirt, u32 pants, u32 skin, u32 hair){
     int W = t->w, H = t->h;
     int cx = W/2;
     int headCY = H/8;
     int headR  = W/6;
 
-    /* رأس */
     px_circle(t, cx, headCY, headR, skin);
-    /* شعر */
     for (int y = headCY-headR; y < headCY-headR/3; y++)
         for (int x = cx-headR; x <= cx+headR; x++)
             if ((x-cx)*(x-cx)+(y-headCY)*(y-headCY) <= headR*headR)
                 px_set(t, x, y, hair);
-    /* عيون */
     px_rect(t, cx-headR/2, headCY, cx-headR/2+1, headCY+1, 0xFF000000u);
     px_rect(t, cx+headR/2-1, headCY, cx+headR/2, headCY+1, 0xFF000000u);
-    /* فم */
     px_rect(t, cx-2, headCY+headR/2, cx+2, headCY+headR/2, 0xFF8B3030u);
 
-    /* جسم */
     int bTop = headCY + headR + 2;
     int bBot = H*3/5;
     int bW   = W/5;
     px_rect(t, cx-bW, bTop, cx+bW, bBot, shirt);
-    /* ياقة */
     px_rect(t, cx-bW+1, bTop, cx+bW-1, bTop+1, 0xFFDDDDDDu);
-    /* أزرار */
     for (int y = bTop+4; y < bBot; y += 7) px_set(t, cx, y, 0xFF333333u);
 
-    /* ذراعين */
     px_rect(t, cx-bW-3, bTop+2, cx-bW-1, bBot-4, shirt);
     px_rect(t, cx+bW+1, bTop+2, cx+bW+3, bBot-4, shirt);
     px_rect(t, cx-bW-3, bBot-4, cx-bW-1, bBot-1, skin);
     px_rect(t, cx+bW+1, bBot-4, cx+bW+3, bBot-1, skin);
 
-    /* رجلين */
     int lW = W/8;
     px_rect(t, cx-4-lW, bBot+1, cx-4, H-3, pants);
     px_rect(t, cx+4, bBot+1, cx+4+lW, H-3, pants);
-    /* أحذية */
     px_rect(t, cx-5-lW, H-4, cx-3, H-1, 0xFF1A1A1Au);
     px_rect(t, cx+3, H-4, cx+5+lW, H-1, 0xFF1A1A1Au);
 }
 
-/* ---- عربية (منظر جانبي) ---- */
 static void tex_draw_car(Tex *t, u32 body, u32 glass){
     int W = t->w, H = t->h;
-    /* هيكل سفلي */
     px_rect(t, 2, H/2, W-3, H*3/4, body);
-    /* كابينة */
     px_rect(t, W/5, H/3, W*4/5, H/2, body);
-    /* نوافذ */
     px_rect(t, W/5+3, H/3+3, W/2-2, H/2-3, glass);
     px_rect(t, W/2+2, H/3+3, W*4/5-3, H/2-3, glass);
-    /* عمود */
     px_rect(t, W/2-1, H/3+3, W/2+1, H/2-3, body);
-    /* خط */
     px_rect(t, 3, H/2-1, W-4, H/2, 0xFFFFFFFFu);
-    /* مصابيح */
     px_rect(t, 3, H/2+3, W/7, H/2+7, 0xFFFFF8C0u);
     px_rect(t, W-W/7, H/2+3, W-4, H/2+7, 0xFFFF3020u);
-    /* شبكة */
     px_rect(t, W/4, H/2+6, W*3/4, H/2+8, 0xFF101010u);
-    /* عجلات */
     px_circle(t, W/5, H*3/4-1, 6, 0xFF0A0A0Au);
     px_circle(t, W/5, H*3/4-1, 3, 0xFF808890u);
     px_circle(t, W*4/5, H*3/4-1, 6, 0xFF0A0A0Au);
     px_circle(t, W*4/5, H*3/4-1, 3, 0xFF808890u);
 }
 
-/* ---- شجرة ---- */
 static void tex_draw_tree(Tex *t){
     int W = t->w, H = t->h;
     int cx = W/2;
-    /* جزع */
     px_rect(t, cx-3, H*2/3, cx+3, H-2, 0xFF4A2E1Au);
     for (int y = H*2/3; y < H-2; y += 5) px_set(t, cx-1, y, 0xFF3A2010u);
-    /* أوراق */
     px_circle(t, cx, H/4, W/3, 0xFF1A5A20u);
     px_circle(t, cx-8, H/3, W/4, 0xFF2E7A30u);
     px_circle(t, cx+8, H/3, W/4, 0xFF2E7A30u);
@@ -225,15 +234,12 @@ static void tex_draw_tree(Tex *t){
     px_circle(t, cx+4, H/3+2, W/5, 0xFF4AA050u);
 }
 
-/* ---- مبنى ---- */
 static void tex_draw_building(Tex *t, u32 wall, u32 trim){
     int W = t->w, H = t->h;
     px_rect(t, 4, 4, W-5, H-5, wall);
-    /* إطار */
     for (int x=4; x<W-4; x++){ px_set(t,x,4,trim); px_set(t,x,H-5,trim); }
     for (int y=4; y<H-4; y++){ px_set(t,4,y,trim); px_set(t,W-5,y,trim); }
 
-    /* نوافذ 4×5 */
     int cols = 4, rows = 5;
     int mx = 12, my = 12;
     int ww = (W - 2*mx) / cols - 5;
@@ -248,7 +254,6 @@ static void tex_draw_building(Tex *t, u32 wall, u32 trim){
             for (int y=y0; y<=y0+wh; y++){ px_set(t,x0,y,trim); px_set(t,x0+ww,y,trim); }
         }
     }
-    /* باب */
     int dw = W/6, dh = H/6;
     int dx = W/2 - dw/2;
     int dy = H - 5 - dh;
@@ -256,40 +261,27 @@ static void tex_draw_building(Tex *t, u32 wall, u32 trim){
     px_rect(t, dx+2, dy+2, dx+dw-2, H-7, 0xFF5A3A20u);
 }
 
-/* ---- أسفلت ---- */
 static void tex_draw_road(Tex *t){
     int W = t->w, H = t->h;
     px_rect(t, 0, 0, W-1, H-1, 0xFF303030u);
-    /* خط أصفر في النص */
     px_rect(t, W/2-1, 0, W/2+1, H-1, 0xFFFFCC00u);
-    /* شقوق */
     for (int i=0;i<30;i++){
         int x = rng()%W, y = rng()%H;
         px_rect(t, x, y, x+3, y+1, 0xFF1A1A1Au);
     }
 }
 
-/* ---- تحميل texture من pixels ---- */
+/* رفع texture على GPU باستخدام tiny3d_TextureOffset */
 static void tex_upload(Tex *t){
-    /* نبني tiny3d pngData-like struct ونحمله */
-    /* ملاحظة: نستخدم rsxLoadTexture — لو مش متاح، اللعبة تكمل بدون texture */
-    extern u32 rsxLoadTexture(void*);
+    /* نجهز pngData-like struct */
+    t->png.width   = t->w;
+    t->png.height  = t->h;
+    t->png.bmp_out = t->pixels;
 
-    /* نحاول استخدام tiny3d_TextureOffset */
-    /* الحل الأمن: نستخدم المؤشر البديل */
-    void *raw = malloc(4096 + t->w*t->h*4);
-    memset(raw, 0, 4096);
-    /* نضع الأبعاد في أول bytes — حسب صيغة pngData */
-    u16 *hp = (u16*)raw;
-    hp[0] = t->w;
-    hp[1] = t->h;
-    hp[2] = t->w * 4;   /* pitch */
-    /* البيانات بعد 4096 */
-    memcpy((u8*)raw + 4096, t->pixels, t->w*t->h*4);
-
-    t->offset = rsxLoadTexture(raw);
-    t->ok = (t->offset != 0);
-    free(raw);
+    /* نستخدم دالة tiny3d الرسمية للـ upload */
+    /* tiny3d_TextureOffset بتاخد void* — بنبعت pointer لـ png */
+    tiny3d_TextureOffset(&t->png);
+    t->ok = 1;
 }
 
 static void textures_init(void){
@@ -328,7 +320,6 @@ static void project(float wx,float wy,float wz,SP*out){
     float cx = p_x - sinf(cam_yaw)*cam_dist*cosf(cam_pitch);
     float cy = 4.0f + sinf(cam_pitch)*cam_dist;
     float cz = p_z - cosf(cam_yaw)*cam_dist*cosf(cam_pitch);
-    /* shake */
     cx += (rng()%100 - 50) * 0.01f * g_shake;
     cy += (rng()%100 - 50) * 0.01f * g_shake;
 
@@ -368,42 +359,42 @@ static void draw_tex_face(Tex *t,
                           float x3,float y3,float z3,float u3,float v3,
                           float x4,float y4,float z4,float u4,float v4,
                           u32 col){
-    if (!t->ok) return;
-    SP a,b,c,d;
-    project(x1,y1,z1,&a);
-    project(x2,y2,z2,&b);
-    project(x3,y3,z3,&c);
-    project(x4,y4,z4,&d);
-    if (!a.vis || !b.vis || !c.vis || !d.vis) return;
+    SP pa,pb,pc,pd;
+    project(x1,y1,z1,&pa);
+    project(x2,y2,z2,&pb);
+    project(x3,y3,z3,&pc);
+    project(x4,y4,z4,&pd);
+    if (!pa.vis || !pb.vis || !pc.vis || !pd.vis) return;
 
-    /* تفعيل texture */
-    tiny3d_TextureOffset(t->offset);
-    tiny3d_TextureFormat(TINY3D_TEX_FORMAT_A8R8G8B8);
-    tiny3d_TextureEnable();
+    if (t && t->ok){
+        tiny3d_TextureOffset(&t->png);
+        tiny3d_TextureFormat(TINY3D_TEX_FORMAT_A8R8G8B8);
+        tiny3d_TextureEnable();
 
-    tiny3d_SetPolygon(TINY3D_QUADS);
-    tiny3d_VertexPos(a.x,a.y,a.z);
-    tiny3d_VertexColor(col);
-    tiny3d_VertexTexture2(u1, v1);
+        tiny3d_SetPolygon(TINY3D_QUADS);
+        tiny3d_VertexPos(pa.x,pa.y,pa.z);
+        tiny3d_VertexColor(col);
+        tiny3d_VertexTexture2(u1, v1);
 
-    tiny3d_VertexPos(b.x,b.y,b.z);
-    tiny3d_VertexTexture2(u2, v2);
+        tiny3d_VertexPos(pb.x,pb.y,pb.z);
+        tiny3d_VertexTexture2(u2, v2);
 
-    tiny3d_VertexPos(c.x,c.y,c.z);
-    tiny3d_VertexTexture2(u3, v3);
+        tiny3d_VertexPos(pc.x,pc.y,pc.z);
+        tiny3d_VertexTexture2(u3, v3);
 
-    tiny3d_VertexPos(d.x,d.y,d.z);
-    tiny3d_VertexTexture2(u4, v4);
-    tiny3d_End();
+        tiny3d_VertexPos(pd.x,pd.y,pd.z);
+        tiny3d_VertexTexture2(u4, v4);
+        tiny3d_End();
 
-    tiny3d_TextureDisable();
+        tiny3d_TextureDisable();
+    } else {
+        draw_quad2d(pa.x,pa.y,pb.x,pb.y,pc.x,pc.y,pd.x,pd.y,col);
+    }
 }
 
-/* Billboard (يواجه الكاميرا) بـ texture */
 static void draw_billboard(Tex *t, float wx, float wy, float wz,
                             float w, float h, u32 col){
-    float cx = p_x, cz = p_z;
-    float fx = wx - cx, fz = wz - cz;
+    float fx = wx - p_x, fz = wz - p_z;
     float len = sqrtf(fx*fx + fz*fz);
     if (len < 0.001f){ fx=0; fz=-1; len=1; }
     fx/=len; fz/=len;
@@ -420,41 +411,41 @@ static void draw_billboard(Tex *t, float wx, float wy, float wz,
         ax, y1, az,  0.0f, 0.0f, col);
 }
 
-/* box بـ texture على وجه واحد، الباقي لون */
-static void draw_3d_box(float cx,float cy,float cz,float w,float h,float d,
+/* box بـ texture على الوجه الأمامي فقط */
+static void draw_3d_box(float cx,float cy,float cz,float w,float h,float depth,
                         u32 col, Tex *tex){
-    float hw=w*0.5f, hd=d*0.5f;
+    float hw=w*0.5f, hd=depth*0.5f;
     float x0=cx-hw, x1=cx+hw, z0=cz-hd, z1=cz+hd;
     float y0=cy, y1=cy+h;
     u32 top  = col;
     u32 side = ((col & 0xFEFEFE) >> 1) | 0xFF000000u;
     u32 dark = ((col & 0xFCFCFC) >> 2) | 0xFF000000u;
 
-    /* الوجوه الأربع بلون */
-    SP a,b,c,d;
+    SP pa,pb,pc,pd;
+
     /* فوق */
-    project(x0,y1,z0,&a); project(x1,y1,z0,&b);
-    project(x1,y1,z1,&c); project(x0,y1,z1,&d);
-    if (a.vis&&b.vis&&c.vis&&d.vis)
-        draw_quad2d(a.x,a.y,b.x,b.y,c.x,c.y,d.x,d.y,top);
+    project(x0,y1,z0,&pa); project(x1,y1,z0,&pb);
+    project(x1,y1,z1,&pc); project(x0,y1,z1,&pd);
+    if (pa.vis&&pb.vis&&pc.vis&&pd.vis)
+        draw_quad2d(pa.x,pa.y,pb.x,pb.y,pc.x,pc.y,pd.x,pd.y,top);
 
     /* خلف */
-    project(x0,y0,z1,&a); project(x1,y0,z1,&b);
-    project(x1,y1,z1,&c); project(x0,y1,z1,&d);
-    if (a.vis&&b.vis&&c.vis&&d.vis)
-        draw_quad2d(a.x,a.y,b.x,b.y,c.x,c.y,d.x,d.y,side);
+    project(x0,y0,z1,&pa); project(x1,y0,z1,&pb);
+    project(x1,y1,z1,&pc); project(x0,y1,z1,&pd);
+    if (pa.vis&&pb.vis&&pc.vis&&pd.vis)
+        draw_quad2d(pa.x,pa.y,pb.x,pb.y,pc.x,pc.y,pd.x,pd.y,side);
 
     /* يمين */
-    project(x1,y0,z0,&a); project(x0,y0,z0,&b);
-    project(x0,y1,z0,&c); project(x1,y1,z0,&d);
-    if (a.vis&&b.vis&&c.vis&&d.vis)
-        draw_quad2d(a.x,a.y,b.x,b.y,c.x,c.y,d.x,d.y,dark);
+    project(x1,y0,z0,&pa); project(x0,y0,z0,&pb);
+    project(x0,y1,z0,&pc); project(x1,y1,z0,&pd);
+    if (pa.vis&&pb.vis&&pc.vis&&pd.vis)
+        draw_quad2d(pa.x,pa.y,pb.x,pb.y,pc.x,pc.y,pd.x,pd.y,dark);
 
     /* يسار */
-    project(x0,y0,z0,&a); project(x0,y0,z1,&b);
-    project(x0,y1,z1,&c); project(x0,y1,z0,&d);
-    if (a.vis&&b.vis&&c.vis&&d.vis)
-        draw_quad2d(a.x,a.y,b.x,b.y,c.x,c.y,d.x,d.y,dark);
+    project(x0,y0,z0,&pa); project(x0,y0,z1,&pb);
+    project(x0,y1,z1,&pc); project(x0,y1,z0,&pd);
+    if (pa.vis&&pb.vis&&pc.vis&&pd.vis)
+        draw_quad2d(pa.x,pa.y,pb.x,pb.y,pc.x,pc.y,pd.x,pd.y,dark);
 
     /* أمام بـ texture */
     if (tex && tex->ok){
@@ -464,14 +455,13 @@ static void draw_3d_box(float cx,float cy,float cz,float w,float h,float d,
             x1, y1, z0,  1.0f, 0.0f,
             x0, y1, z0,  0.0f, 0.0f, 0xFFFFFFFFu);
     } else {
-        project(x0,y0,z0,&a); project(x1,y0,z0,&b);
-        project(x1,y1,z0,&c); project(x0,y1,z0,&d);
-        if (a.vis&&b.vis&&c.vis&&d.vis)
-            draw_quad2d(a.x,a.y,b.x,b.y,c.x,c.y,d.x,d.y,side);
+        project(x0,y0,z0,&pa); project(x1,y0,z0,&pb);
+        project(x1,y1,z0,&pc); project(x0,y1,z0,&pd);
+        if (pa.vis&&pb.vis&&pc.vis&&pd.vis)
+            draw_quad2d(pa.x,pa.y,pb.x,pb.y,pc.x,pc.y,pd.x,pd.y,side);
     }
 }
 
-/* أرضية بـ texture */
 static void draw_ground_tex(float cx, float cz, float size, Tex *t){
     float h = size*0.5f;
     draw_tex_face(t,
@@ -498,7 +488,6 @@ static void gen_city(void){
 
             float cx = (gi+0.5f)*60.0f, cz = (gj+0.5f)*60.0f;
 
-            /* park مربع كل 5 بلوكات */
             if ((gi*7 + gj*3) % 5 == 0){
                 for (int k=0;k<4 && num_tree<MAX_TREE;k++){
                     t_x[num_tree] = cx + ((k%2)-1)*20.0f;
@@ -650,14 +639,12 @@ static void audio_fill(short *out){
     }
 }
 
+extern int audioPortSend(u32 port, void *buffer, u32 size);
+
 static void audio_pump(void){
     if (!g_audioOK) return;
     static int bi = 0;
     audio_fill(a_buf[bi]);
-    /* نحاول الإرسال */
-    /* audioPortSend موجودة ولكن بتوقيع مختلف — نستخدم memcpy بديل */
-    /* PSL1GHT الحديث: audioPortSend(port, buf, size) */
-    extern int audioPortSend(u32, void*, u32);
     if (audioPortSend(g_audioPort, a_buf[bi], 1024*2*sizeof(short)) == 0)
         bi = (bi+1) % 4;
 }
@@ -669,14 +656,12 @@ static void update(float dt){
     int lx = pad_lx(), ly = pad_ly();
     int rx = pad_rx(), ry = pad_ry();
 
-    /* Camera */
     cam_yaw += (rx/128.0f)*2.6f*dt;
     cam_pitch = clampf(cam_pitch + (ry/128.0f)*1.5f*dt, -0.1f, 1.2f);
     if (btn & BTN_R2) cam_dist += 15.0f*dt;
     if (btn & BTN_L2) cam_dist -= 15.0f*dt;
     cam_dist = clampf(cam_dist, 5.0f, 30.0f);
 
-    /* Controls */
     float thr = -(ly/128.0f);
     float st  = -(lx/128.0f);
     if (btn & BTN_UP)    thr = 1.0f;
@@ -684,11 +669,9 @@ static void update(float dt){
     if (btn & BTN_LEFT)  st = 1.0f;
     if (btn & BTN_RIGHT) st = -1.0f;
 
-    /* Boost */
     if ((btn & BTN_R1) && p_boost > 0.0f){
         p_speed += 45.0f*dt;
         p_boost -= 0.45f*dt;
-        /* particles */
         float bx = p_x - sinf(p_heading)*3.0f;
         float bz = p_z - cosf(p_heading)*3.0f;
         for (int k=0;k<2;k++){
@@ -705,26 +688,21 @@ static void update(float dt){
         p_boost = clampf(p_boost + 0.15f*dt, 0.0f, 1.0f);
     }
 
-    /* Brake */
     if (btn & BTN_L1){
         p_speed *= (1.0f - 3.5f*dt);
         g_shake = 0.5f;
     }
 
-    /* Speed */
     p_speed += thr*32.0f*dt;
     if (fabsf(thr) < 0.1f) p_speed *= (1.0f - 1.3f*dt);
     p_speed = clampf(p_speed, -20.0f, 60.0f);
 
-    /* Steering */
     if (fabsf(p_speed) > 0.5f){
         float sgn = p_speed > 0 ? 1.0f : -1.0f;
         float gain = clampf(fabsf(p_speed)/15.0f, 0.3f, 1.0f);
         p_heading += st * 2.2f * gain * dt * sgn;
     }
 
-    /* Move + Collision */
-    float oldx = p_x, oldz = p_z;
     float vx = sinf(p_heading)*p_speed*dt;
     float vz = cosf(p_heading)*p_speed*dt;
     float nx = p_x + vx, nz = p_z + vz;
@@ -735,7 +713,6 @@ static void update(float dt){
     g_shake *= (1.0f - 5.0f*dt);
     if (g_shake < 0.01f) g_shake = 0.0f;
 
-    /* Time */
     g_timeOfDay += dt/240.0f;
     if (g_timeOfDay > 1.0f) g_timeOfDay -= 1.0f;
 
@@ -753,40 +730,29 @@ static u32 sky_col(void){
     return 0xFF000000u | ((u32)r<<16) | ((u32)g<<8) | b;
 }
 
-static u32 horizon_col(void){
-    float sY = sinf((g_timeOfDay - 0.25f) * 6.2831853f);
-    if (sY > 0) return 0xFFBBCCDDu;
-    if (sY > -0.3f) return 0xFF554466u;
-    return 0xFF1A1A2Eu;
-}
-
 static void render(void){
     u32 sky = sky_col();
     tiny3d_Clear(sky, 0xFFFFFFFF);
 
-    /* Regenerate on move */
     static float last_x = 1e9f, last_z = 1e9f;
     if (fabsf(p_x-last_x) > 25.0f || fabsf(p_z-last_z) > 25.0f){
         gen_city();
         last_x = p_x; last_z = p_z;
     }
 
-    /* Sky gradient */
+    /* Sky */
     draw_rect2d(0, 0, SCR_W, SCR_H*0.58f, sky);
-    draw_rect2d(0, SCR_H*0.58f, SCR_W, 6, horizon_col());
+    float sY = sinf((g_timeOfDay - 0.25f) * 6.2831853f);
+    u32 horizon = (sY > 0) ? 0xFFBBCCDDu : 0xFF223344u;
+    draw_rect2d(0, SCR_H*0.58f, SCR_W, 6, horizon);
 
-    /* Ground grid بـ texture */
+    /* Ground */
     int bI = (int)(p_x/60.0f), bJ = (int)(p_z/60.0f);
-    for (int i=-4;i<=4;i++){
-        for (int j=-4;j<=4;j++){
-            float gx = (bI+i)*60.0f, gz = (bJ+j)*60.0f;
-            u32 tint = ((i+j)&1) ? 0xFFB0B0B0u : 0xFFFFFFFFu;
-            (void)tint;
-            draw_ground_tex(gx, gz, 60.0f, &tex_road);
-        }
-    }
+    for (int i=-4;i<=4;i++)
+        for (int j=-4;j<=4;j++)
+            draw_ground_tex((bI+i)*60.0f, (bJ+j)*60.0f, 60.0f, &tex_road);
 
-    /* Sort buildings far->near */
+    /* Buildings sorted */
     int ord[MAX_BLD];
     float dist[MAX_BLD];
     for (int i=0;i<num_bld;i++){
@@ -805,26 +771,21 @@ static void render(void){
         draw_3d_box(b_x[i], 0, b_z[i], b_w[i], b_h[i], b_d[i], b_col[i], &tex_building);
     }
 
-    /* Trees */
     for (int i=0;i<num_tree;i++)
         draw_billboard(&tex_tree, t_x[i], 0.0f, t_z[i], 6.0f, 10.0f, 0xFFFFFFFFu);
 
-    /* AI cars */
     for (int i=0;i<MAX_AI;i++){
         Tex *tt = (a_tex[i]==0) ? &tex_car_red :
                   (a_tex[i]==1) ? &tex_car_blue : &tex_car_yel;
         draw_billboard(tt, a_x[i], 0.15f, a_z[i], 5.0f, 2.5f, 0xFFFFFFFFu);
     }
 
-    /* Player car */
     draw_billboard(&tex_car_red, p_x, 0.15f, p_z, 5.5f, 2.8f, 0xFFFFFFFFu);
 
-    /* Particles */
-    for (int i=0;i<num_prt;i++){
+    for (int i=0;i<num_prt;i++)
         draw_billboard(&tex_road, prt_x[i], prt_y[i], prt_z[i], 0.4f, 0.4f, prt_col[i]);
-    }
 
-    /* ============= HUD ============= */
+    /* HUD */
     SetFontSize(30, 30);
     SetFontColor(0xFF00D4FFu, 0x00000000);
     DrawString(20, 42, "NEON CITY");
@@ -844,9 +805,6 @@ static void render(void){
     DrawString(20, SCR_H - 70, "BOOST");
     draw_rect2d(95, SCR_H - 73, 220, 16, 0xFF333333u);
     draw_rect2d(95, SCR_H - 73, p_boost*220.0f, 16, 0xFFFF6B35u);
-    /* إطار */
-    draw_rect2d(95, SCR_H - 73, 220, 1, 0xFFFFFFFFu);
-    draw_rect2d(95, SCR_H - 58, 220, 1, 0xFFFFFFFFu);
 
     /* Minimap */
     {
@@ -857,7 +815,6 @@ static void render(void){
         float sc = (float)ms / 280.0f;
         float cxm = mx + ms*0.5f, cym = my + ms*0.5f;
 
-        /* Buildings */
         for (int i=0;i<num_bld;i++){
             float dx = (b_x[i]-p_x)*sc;
             float dz = (b_z[i]-p_z)*sc;
@@ -865,21 +822,18 @@ static void render(void){
             float hs = b_w[i]*0.5f*sc;
             draw_rect2d(cxm+dx-hs, cym+dz-hs, hs*2, hs*2, 0xFF5A6878u);
         }
-        /* Trees */
         for (int i=0;i<num_tree;i++){
             float dx = (t_x[i]-p_x)*sc;
             float dz = (t_z[i]-p_z)*sc;
             if (fabsf(dx) > ms*0.5f || fabsf(dz) > ms*0.5f) continue;
             draw_rect2d(cxm+dx-2, cym+dz-2, 4, 4, 0xFF2E7A30u);
         }
-        /* AI */
         for (int i=0;i<MAX_AI;i++){
             float dx = (a_x[i]-p_x)*sc;
             float dz = (a_z[i]-p_z)*sc;
             if (fabsf(dx) > ms*0.5f || fabsf(dz) > ms*0.5f) continue;
             draw_rect2d(cxm+dx-2, cym+dz-2, 4, 4, 0xFFDC7864u);
         }
-        /* Player */
         draw_rect2d(cxm-4, cym-4, 8, 8, 0xFFFFCC00u);
     }
 
@@ -920,7 +874,6 @@ int main(int argc, char *argv[]){
     gen_city();
     init_ai();
 
-    /* rng seed من الوقت */
     struct timeval tv; gettimeofday(&tv, NULL);
     rng_s = (unsigned int)tv.tv_usec;
 
