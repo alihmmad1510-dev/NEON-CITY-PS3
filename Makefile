@@ -1,61 +1,25 @@
-# ============================================================
-#  NEON CITY — Standalone Makefile (نسخة نهائية)
-#  مستقل تمامًا — يكتشف الـ Toolchain تلقائيًا
-# ============================================================
-
 TARGET  := neoncity
 SRC     := src/main.c
 OBJ     := src/main.o
 PS3DEV  := $(CURDIR)/ps3dev
-
-# ⚠️ مهم جدًا: نصدّر PSL1GHT لـ linker
 export PSL1GHT := $(CURDIR)/ps3dev
 export PS3DEV  := $(CURDIR)/ps3dev
 
-# ============================================================
-# اكتشاف المترجم
-# ============================================================
 PPU_GCC := $(shell find $(PS3DEV) -name "ppu-gcc" -type f 2>/dev/null | head -1)
 ifeq ($(strip $(PPU_GCC)),)
   PPU_GCC := $(shell find $(PS3DEV) -name "powerpc64-ps3-elf-gcc" -type f 2>/dev/null | head -1)
 endif
-
 MAKE_SELF := $(shell find $(PS3DEV) -name "make_self" -type f 2>/dev/null | head -1)
 
-# ============================================================
-# اكتشاف المجلدات
-# ============================================================
-PS3_INC     := $(shell find $(PS3DEV) -type d -path "*/ppu/include" 2>/dev/null | grep -v portlibs | head -1)
-PORT_INC    := $(shell find $(PS3DEV) -type d -path "*portlibs/ppu/include" 2>/dev/null | head -1)
-PS3_LIB     := $(shell find $(PS3DEV) -type d -path "*/ppu/lib" 2>/dev/null | grep -v portlibs | head -1)
-PORT_LIB    := $(shell find $(PS3DEV) -type d -path "*portlibs/ppu/lib" 2>/dev/null | head -1)
+PS3_INC  := $(shell find $(PS3DEV) -type d -path "*/ppu/include" 2>/dev/null | grep -v portlibs | head -1)
+PORT_INC := $(shell find $(PS3DEV) -type d -path "*portlibs/ppu/include" 2>/dev/null | head -1)
+PS3_LIB  := $(shell find $(PS3DEV) -type d -path "*/ppu/lib" 2>/dev/null | grep -v portlibs | head -1)
+PORT_LIB := $(shell find $(PS3DEV) -type d -path "*portlibs/ppu/lib" 2>/dev/null | head -1)
 
-# ============================================================
-# تشخيص
-# ============================================================
-$(info ============================================)
-$(info PPU_GCC   = $(PPU_GCC))
-$(info PS3_INC   = $(PS3_INC))
-$(info PORT_INC  = $(PORT_INC))
-$(info PS3_LIB   = $(PS3_LIB))
-$(info PORT_LIB  = $(PORT_LIB))
-$(info PSL1GHT   = $(PSL1GHT))
-$(info MAKE_SELF = $(MAKE_SELF))
-$(info ============================================)
+CFLAGS  := -O2 -mhard-float -Wno-implicit-function-declaration -I$(PS3_INC) -I$(PORT_INC)
+LDFLAGS := -L$(PS3_LIB) -L$(PORT_LIB)
+LIBS    := -ltiny3d -lrsx -lgcm_sys -lio -lsysutil -lsysmodule -lfont3d -lm -lnet -lrt -llv2
 
-# ============================================================
-# Flags
-# ============================================================
-INC_FLAGS := -I$(PS3_INC) -I$(PORT_INC)
-LDFLAGS   := -L$(PS3_LIB) -L$(PORT_LIB) -L$(PS3DEV)/ppu/lib
-CFLAGS    := -O2 -mhard-float -Wno-implicit-function-declaration $(INC_FLAGS)
-
-LIBS := -ltiny3d -lrsx -lgcm_sys -lio -lsysutil -lsysmodule \
-        -laudio -lfont3d -lm -lnet -lrt -llv2
-
-# ============================================================
-# Targets
-# ============================================================
 all: $(TARGET).self
 
 $(OBJ): $(SRC)
@@ -68,12 +32,39 @@ $(TARGET).elf: $(OBJ)
 $(TARGET).self: $(TARGET).elf
 	@if [ -n "$(MAKE_SELF)" ]; then \
 		$(MAKE_SELF) $(TARGET).elf $(TARGET).self; \
-	else \
-		echo "make_self not found — copying elf"; \
-		cp $(TARGET).elf $(TARGET).self; \
+	else cp $(TARGET).elf $(TARGET).self; fi
+
+# بناء PKG
+pkg: $(TARGET).self
+	@echo "=== Building PKG ==="
+	@rm -rf pkg_build $(TARGET).pkg
+	@mkdir -p pkg_build/USRDIR
+	@cp $(TARGET).self pkg_build/USRDIR/EBOOT.BIN
+	@if [ -f $(PSL1GHT)/bin/sfo.py ]; then \
+		echo "--- Creating PARAM.SFO ---"; \
+		python3 $(PSL1GHT)/bin/sfo.py \
+			--add-contents "TITLE=Neon City" \
+			--add-contents "TITLE_ID=NEONCITY1" \
+			--add-contents "VERSION=01.00" \
+			--add-contents "APP_VER=01.00" \
+			--add-contents "CATEGORY=HG" \
+			--add-contents "BOOT_FILE=/USRDIR/EBOOT.BIN" \
+			pkg_build/PARAM.SFO || echo "sfo.py failed"; \
 	fi
+	@if [ -f $(PSL1GHT)/bin/pkg.py ]; then \
+		echo "--- Creating PKG ---"; \
+		python3 $(PSL1GHT)/bin/pkg.py \
+			--contentid UP0001-NEONCITY1_00-NEONCITY000000001 \
+			pkg_build/ $(TARGET).pkg || \
+		python3 $(PSL1GHT)/bin/pkg.py \
+			UP0001-NEONCITY1_00-NEONCITY000000001 \
+			pkg_build/ $(TARGET).pkg || \
+		echo "pkg.py failed - trying alt"; \
+	fi
+	@ls -la $(TARGET).pkg 2>/dev/null || echo "no pkg"
 
 clean:
-	rm -f $(OBJ) $(TARGET).elf $(TARGET).self $(TARGET).map
+	rm -f $(OBJ) $(TARGET).elf $(TARGET).self $(TARGET).pkg
+	rm -rf pkg_build
 
-.PHONY: all clean
+.PHONY: all pkg clean
