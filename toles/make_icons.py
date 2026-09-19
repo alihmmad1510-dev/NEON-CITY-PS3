@@ -2,10 +2,7 @@
 # =====================================================================
 #  FILE: toles/make_icons.py
 #  PROJECT: NEON CITY ULTRA v4
-#  DESCRIPTION: Generate PKG assets targeting ~45MB total
-#    - ICON0.PNG, PIC0.PNG, PIC1.PNG (standard PS3)
-#    - 8 PREVIEW PNG files (1920x1080)
-#    - 7 WALLPAPER BMP files (1920x1080, uncompressed ~6MB each)
+#  DESCRIPTION: Generate 30 JPEG wallpapers so PKG alone reaches ~60MB
 # =====================================================================
 
 from PIL import Image, ImageDraw
@@ -162,66 +159,18 @@ def draw_pic1(path):
     print(f"PIC1.PNG created: {os.path.getsize(path)} bytes")
 
 
-def draw_preview(path, idx):
-    W, H = 1920, 1080
-    img = Image.new('RGB', (W, H), DARK_BG)
-    d = ImageDraw.Draw(img)
-    horizon = H * 3 // 5
-
-    palettes = [
-        ((5, 18, 40), (80, 130, 180), (200, 220, 240)),
-        ((8, 4, 18), (60, 20, 90), (140, 60, 120)),
-        ((20, 10, 5), (140, 70, 40), (220, 150, 90)),
-        ((5, 20, 15), (30, 90, 70), (140, 200, 160)),
-        ((15, 5, 30), (80, 30, 120), (180, 100, 200)),
-        ((30, 20, 5), (180, 130, 60), (240, 200, 120)),
-        ((10, 25, 40), (40, 100, 140), (200, 220, 240)),
-        ((5, 10, 30), (70, 40, 120), (200, 120, 180)),
-    ]
-    top, mid, bottom = palettes[idx % len(palettes)]
-
-    _sky_gradient(d, W, H, top, mid, bottom, horizon)
-    _draw_grid(d, W, H, horizon)
-    d.polygon([(W//2-180, horizon), (W//2+180, horizon), (W, H), (0, H)], fill=(28, 30, 38))
-    for i in range(15):
-        y0 = horizon + 40 + i*60
-        y1 = y0 + 35
-        w = 6 + i
-        d.polygon([(W//2-w, y0), (W//2+w, y0), (W//2+w, y1), (W//2-w, y1)], fill=(255, 204, 0))
-    _draw_city_skyline(d, W, horizon, horizon, (30, 38, 55), (255, 238, 136))
-    random.seed(idx * 31)
-    for _ in range(10):
-        bx = random.randint(0, W-300)
-        by = horizon - random.randint(100, 300)
-        bw = random.randint(180, 320)
-        d.rectangle([bx, by, bx+bw, horizon], fill=(60, 65, 90))
-        for wy in range(by+10, horizon-10, 24):
-            for wx in range(bx+10, bx+bw-10, 22):
-                if random.random() < 0.4:
-                    d.rectangle([wx, wy, wx+12, wy+16], fill=(255, 238, 136))
-    cx, cy = W//2, H - 150
-    d.ellipse([cx-160, cy+30, cx+160, cy+70], fill=(0,0,0))
-    d.rectangle([cx-160, cy-25, cx+160, cy+45], fill=(232, 184, 36))
-    d.rectangle([cx-105, cy-80, cx+105, cy-25], fill=(232, 184, 36))
-    d.rectangle([cx-95, cy-72, cx-15, cy-30], fill=(48, 64, 80))
-    d.rectangle([cx+15, cy-72, cx+95, cy-30], fill=(48, 64, 80))
-    d.rectangle([cx-160, cy-5, cx+160, cy+5], fill=(255,255,255))
-    d.ellipse([cx-130, cy+20, cx-80, cy+70], fill=(0,0,0))
-    d.ellipse([cx+80, cy+20, cx+130, cy+70], fill=(0,0,0))
-    d.text((40, 40), "NEON CITY", fill=NEON_CYAN)
-    d.text((40, 90), "U L T R A   v 4", fill=NEON_ORANGE)
-    d.text((40, H-100), f"SPEED {80 + idx*7} KM/H", fill=(255, 204, 0))
-    d.text((40, H-60), f"SCORE: {idx*125}", fill=(46, 204, 113))
-    d.rectangle([W-280, 40, W-40, 130], fill=(0, 0, 0))
-    d.rectangle([W-278, 42, W-42, 128], fill=(0, 40, 60))
-    d.text((W-250, 60), f"PREVIEW {idx+1}", fill=NEON_CYAN)
-    d.text((W-250, 95), "1920 x 1080", fill=(255, 255, 255))
-    img.save(path, "PNG")
-    print(f"{os.path.basename(path)} created: {os.path.getsize(path)} bytes")
+def _add_detailed_noise(d, W, H, seed):
+    random.seed(seed)
+    for _ in range(100000):
+        x = random.randint(0, W-1)
+        y = random.randint(0, H-1)
+        r = random.randint(50, 255)
+        g = random.randint(50, 255)
+        b = random.randint(50, 255)
+        d.point((x, y), fill=(r, g, b))
 
 
-def draw_wallpaper_bmp(path, idx):
-    """Generate large BMP wallpaper — uncompressed ~6MB per file."""
+def draw_wallpaper_jpeg(path, idx):
     W, H = 1920, 1080
     img = Image.new('RGB', (W, H), DARK_BG)
     d = ImageDraw.Draw(img)
@@ -234,53 +183,48 @@ def draw_wallpaper_bmp(path, idx):
         ((15, 25, 15), (60, 120, 80), (255, 220, 140), "GREEN DISTRICT"),
         ((30, 15, 5), (180, 100, 50), (255, 180, 100), "GOLDEN HOUR"),
         ((8, 20, 40), (30, 100, 150), (100, 200, 255), "BLUE HOUR"),
+        ((20, 5, 20), (140, 30, 80), (255, 120, 180), "PINK CITY"),
+        ((5, 15, 25), (40, 80, 120), (180, 220, 255), "TWILIGHT"),
+        ((25, 15, 10), (160, 80, 40), (255, 200, 140), "SUNRISE"),
     ]
     top, mid, bottom, label = palettes[idx % len(palettes)]
 
     horizon = 620
     _sky_gradient(d, W, H, top, mid, bottom, horizon)
 
-    # stars for night
-    if idx in (1, 3):
-        for _ in range(800):
+    if idx in (1, 3, 7):
+        for _ in range(2000):
             x = random.randint(0, W)
             y = random.randint(0, horizon)
             b = random.randint(150, 255)
             d.point((x, y), fill=(b, b, b))
 
-    # sun/moon
-    if idx in (0, 2, 5):
+    if idx in (0, 2, 5, 9):
         d.ellipse([1400, 200, 1750, 550], fill=bottom)
         d.ellipse([1480, 280, 1670, 470], fill=(255, 255, 220))
     else:
         d.ellipse([1500, 150, 1700, 350], fill=(240, 240, 255))
 
-    # clouds
-    for _ in range(6):
+    for _ in range(10):
         cx = random.randint(100, W-300)
         cy = random.randint(100, 400)
         cw = random.randint(150, 350)
         d.ellipse([cx, cy, cx+cw, cy+cw//3], fill=(255, 255, 255))
         d.ellipse([cx+cw//3, cy-cw//6, cx+cw, cy+cw//4], fill=(255, 255, 255))
 
-    # skyline
     _draw_city_skyline(d, W, horizon, horizon, (40, 45, 65), (255, 220, 100))
 
-    # ground
     d.rectangle([0, horizon, W, H], fill=(20, 22, 30))
     _draw_grid(d, W, H, horizon)
 
-    # road
     d.polygon([(W//2-250, horizon), (W//2+250, horizon), (W, H), (0, H)], fill=(30, 32, 40))
 
-    # dashed lines
     for i in range(15):
         y0 = horizon + 30 + i*55
         y1 = y0 + 40
         w = 8 + i*2
         d.polygon([(W//2-w, y0), (W//2+w, y0), (W//2+w, y1), (W//2-w, y1)], fill=(255, 204, 0))
 
-    # foreground cars
     cx, cy = W//2, H - 180
     d.ellipse([cx-200, cy+40, cx+200, cy+90], fill=(0,0,0))
     d.rectangle([cx-200, cy-30, cx+200, cy+55], fill=(232, 184, 36))
@@ -291,7 +235,18 @@ def draw_wallpaper_bmp(path, idx):
     d.ellipse([cx-165, cy+30, cx-105, cy+90], fill=(0,0,0))
     d.ellipse([cx+105, cy+30, cx+165, cy+90], fill=(0,0,0))
 
-    # text label
+    for k in range(4):
+        ax = random.randint(100, W-300)
+        ay = horizon + random.randint(50, 200)
+        d.ellipse([ax-80, ay+20, ax+80, ay+40], fill=(0,0,0))
+        col = random.choice([(192,57,43), (40,116,166), (39,174,96), (142,68,173)])
+        d.rectangle([ax-80, ay-15, ax+80, ay+30], fill=col)
+        d.rectangle([ax-55, ay-45, ax+55, ay-15], fill=col)
+        d.rectangle([ax-45, ay-40, ax-8, ay-20], fill=(48,64,80))
+        d.rectangle([ax+8, ay-40, ax+45, ay-20], fill=(48,64,80))
+        d.ellipse([ax-65, ay+15, ax-35, ay+45], fill=(0,0,0))
+        d.ellipse([ax+35, ay+15, ax+65, ay+45], fill=(0,0,0))
+
     for dx in range(-3, 4):
         for dy in range(-3, 4):
             if dx*dx + dy*dy > 9: continue
@@ -299,9 +254,11 @@ def draw_wallpaper_bmp(path, idx):
     d.text((W//2 - 250, 200), "NEON CITY", fill=NEON_CYAN)
     d.text((W//2 - 220, 280), label, fill=NEON_ORANGE)
     d.text((W//2 - 250, 340), "U L T R A   v 4", fill=(255, 255, 255))
+    d.text((W//2 - 200, 400), f"WALLPAPER #{idx+1:02d}", fill=(200, 200, 200))
 
-    # save as BMP (uncompressed — large file!)
-    img.save(path, "BMP")
+    _add_detailed_noise(d, W, H, idx * 777)
+
+    img.save(path, "JPEG", quality=100, subsampling=0)
     sz_mb = os.path.getsize(path) / 1024 / 1024
     print(f"{os.path.basename(path)} created: {sz_mb:.2f} MB")
 
@@ -310,22 +267,18 @@ if __name__ == '__main__':
     out_dir = os.environ.get('OUT_DIR', '.')
     os.makedirs(out_dir, exist_ok=True)
 
-    # standard PS3 assets
     draw_icon0(os.path.join(out_dir, 'ICON0.PNG'))
     draw_pic0(os.path.join(out_dir, 'PIC0.PNG'))
     draw_pic1(os.path.join(out_dir, 'PIC1.PNG'))
 
-    # previews (PNG)
-    for i in range(8):
-        draw_preview(os.path.join(out_dir, f'PREVIEW{i+1}.PNG'), i)
-
-    # wallpapers (BMP — large files to boost PKG size)
-    for i in range(7):
-        draw_wallpaper_bmp(os.path.join(out_dir, f'WALLPAPER{i+1}.BMP'), i)
+    # 30 wallpaper JPEG → ~60MB
+    for i in range(30):
+        draw_wallpaper_jpeg(os.path.join(out_dir, f'WALLPAPER{i+1:02d}.JPG'), i)
 
     total = 0
     for fn in os.listdir(out_dir):
-        if fn.endswith(('.PNG', '.BMP')):
+        if fn.endswith(('.PNG', '.JPG', '.BMP')):
             total += os.path.getsize(os.path.join(out_dir, fn))
-    print(f"=== Total images size: {total/1024/1024:.2f} MB ===")
+    print(f"=== Total source size: {total/1024/1024:.2f} MB ===")
+    print("(PKG will be ~5% smaller because JPEG barely compresses)")
     print("All images generated!")
