@@ -1,118 +1,46 @@
 /* =====================================================================
  *  FILE: src/assets.c
  *  PROJECT: NEON CITY ULTRA v4
- *  DESCRIPTION: Declares external texture symbols embedded in the binary
- *    The textures are real 1024x1024 images used by the game
+ *  DESCRIPTION: Exposes embedded 1024x1024 textures to the game code.
+ *    20 textures are linked directly into the ELF by objcopy.
  * ===================================================================== */
 
 #include <ppu-types.h>
 
-/* ============ External texture symbols from objcopy ============ */
-extern const u8 _binary_texture00_png_start[];
-extern const u8 _binary_texture00_png_end[];
-extern const u8 _binary_texture01_png_start[];
-extern const u8 _binary_texture01_png_end[];
-extern const u8 _binary_texture02_png_start[];
-extern const u8 _binary_texture02_png_end[];
-extern const u8 _binary_texture03_png_start[];
-extern const u8 _binary_texture03_png_end[];
-extern const u8 _binary_texture04_png_start[];
-extern const u8 _binary_texture04_png_end[];
-extern const u8 _binary_texture05_png_start[];
-extern const u8 _binary_texture05_png_end[];
-extern const u8 _binary_texture06_png_start[];
-extern const u8 _binary_texture06_png_end[];
-extern const u8 _binary_texture07_png_start[];
-extern const u8 _binary_texture07_png_end[];
-extern const u8 _binary_texture08_png_start[];
-extern const u8 _binary_texture08_png_end[];
-extern const u8 _binary_texture09_png_start[];
-extern const u8 _binary_texture09_png_end[];
-extern const u8 _binary_texture10_png_start[];
-extern const u8 _binary_texture10_png_end[];
-extern const u8 _binary_texture11_png_start[];
-extern const u8 _binary_texture11_png_end[];
-extern const u8 _binary_texture12_png_start[];
-extern const u8 _binary_texture12_png_end[];
-extern const u8 _binary_texture13_png_start[];
-extern const u8 _binary_texture13_png_end[];
-extern const u8 _binary_texture14_png_start[];
-extern const u8 _binary_texture14_png_end[];
-extern const u8 _binary_texture15_png_start[];
-extern const u8 _binary_texture15_png_end[];
-extern const u8 _binary_texture16_png_start[];
-extern const u8 _binary_texture16_png_end[];
-extern const u8 _binary_texture17_png_start[];
-extern const u8 _binary_texture17_png_end[];
-extern const u8 _binary_texture18_png_start[];
-extern const u8 _binary_texture18_png_end[];
-extern const u8 _binary_texture19_png_start[];
-extern const u8 _binary_texture19_png_end[];
+/* External symbols created by ppu-objcopy from each textureNN.png */
+#define DECL_TEX(N) \
+    extern const u8 _binary_texture##N##_png_start[]; \
+    extern const u8 _binary_texture##N##_png_end[];
 
-/* ============ Texture descriptor ============ */
+DECL_TEX(00) DECL_TEX(01) DECL_TEX(02) DECL_TEX(03) DECL_TEX(04)
+DECL_TEX(05) DECL_TEX(06) DECL_TEX(07) DECL_TEX(08) DECL_TEX(09)
+DECL_TEX(10) DECL_TEX(11) DECL_TEX(12) DECL_TEX(13) DECL_TEX(14)
+DECL_TEX(15) DECL_TEX(16) DECL_TEX(17) DECL_TEX(18) DECL_TEX(19)
+
 typedef struct {
     const u8 *data;
     const u8 *end;
     u32 size;
 } EmbeddedTexture;
 
-static EmbeddedTexture g_textures[20];
+static EmbeddedTexture g_tex[20];
 
-void assets_init(void){
-    g_textures[0].data  = _binary_texture00_png_start;
-    g_textures[0].end   = _binary_texture00_png_end;
-    g_textures[1].data  = _binary_texture01_png_start;
-    g_textures[1].end   = _binary_texture01_png_end;
-    g_textures[2].data  = _binary_texture02_png_start;
-    g_textures[2].end   = _binary_texture02_png_end;
-    g_textures[3].data  = _binary_texture03_png_start;
-    g_textures[3].end   = _binary_texture03_png_end;
-    g_textures[4].data  = _binary_texture04_png_start;
-    g_textures[4].end   = _binary_texture04_png_end;
-    g_textures[5].data  = _binary_texture05_png_start;
-    g_textures[5].end   = _binary_texture05_png_end;
-    g_textures[6].data  = _binary_texture06_png_start;
-    g_textures[6].end   = _binary_texture06_png_end;
-    g_textures[7].data  = _binary_texture07_png_start;
-    g_textures[7].end   = _binary_texture07_png_end;
-    g_textures[8].data  = _binary_texture08_png_start;
-    g_textures[8].end   = _binary_texture08_png_end;
-    g_textures[9].data  = _binary_texture09_png_start;
-    g_textures[9].end   = _binary_texture09_png_end;
-    g_textures[10].data = _binary_texture10_png_start;
-    g_textures[10].end  = _binary_texture10_png_end;
-    g_textures[11].data = _binary_texture11_png_start;
-    g_textures[11].end  = _binary_texture11_png_end;
-    g_textures[12].data = _binary_texture12_png_start;
-    g_textures[12].end  = _binary_texture12_png_end;
-    g_textures[13].data = _binary_texture13_png_start;
-    g_textures[13].end  = _binary_texture13_png_end;
-    g_textures[14].data = _binary_texture14_png_start;
-    g_textures[14].end  = _binary_texture14_png_end;
-    g_textures[15].data = _binary_texture15_png_start;
-    g_textures[15].end  = _binary_texture15_png_end;
-    g_textures[16].data = _binary_texture16_png_start;
-    g_textures[16].end  = _binary_texture16_png_end;
-    g_textures[17].data = _binary_texture17_png_start;
-    g_textures[17].end  = _binary_texture17_png_end;
-    g_textures[18].data = _binary_texture18_png_start;
-    g_textures[18].end  = _binary_texture18_png_end;
-    g_textures[19].data = _binary_texture19_png_start;
-    g_textures[19].end  = _binary_texture19_png_end;
+#define REG_TEX(I, N) do { \
+    g_tex[I].data = _binary_texture##N##_png_start; \
+    g_tex[I].end  = _binary_texture##N##_png_end; \
+} while(0)
 
-    for (int i = 0; i < 20; i++){
-        g_textures[i].size = (u32)(g_textures[i].end - g_textures[i].data);
-    }
+void assets_init(void) {
+    REG_TEX(0,  00); REG_TEX(1,  01); REG_TEX(2,  02); REG_TEX(3,  03);
+    REG_TEX(4,  04); REG_TEX(5,  05); REG_TEX(6,  06); REG_TEX(7,  07);
+    REG_TEX(8,  08); REG_TEX(9,  09); REG_TEX(10, 10); REG_TEX(11, 11);
+    REG_TEX(12, 12); REG_TEX(13, 13); REG_TEX(14, 14); REG_TEX(15, 15);
+    REG_TEX(16, 16); REG_TEX(17, 17); REG_TEX(18, 18); REG_TEX(19, 19);
+
+    for (int i = 0; i < 20; i++)
+        g_tex[i].size = (u32)(g_tex[i].end - g_tex[i].data);
 }
 
-u32 assets_count(void){ return 20; }
-
-const u8* assets_data(int i){
-    if (i < 0 || i >= 20) return 0;
-    return g_textures[i].data;
-}
-
-u32 assets_size(int i){
-    if (i < 0 || i >= 20) return 0;
-    return g_textures[i].size;
-}
+u32  assets_count(void)           { return 20; }
+const u8* assets_data(int i)      { return (i>=0 && i<20) ? g_tex[i].data : 0; }
+u32  assets_size(int i)           { return (i>=0 && i<20) ? g_tex[i].size : 0; }
