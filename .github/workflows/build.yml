@@ -4,7 +4,7 @@ on: [push, workflow_dispatch]
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 25
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -13,8 +13,7 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3 python3-pip libelf-dev libtool-bin wget git
-          pip3 install pycryptodome
+          sudo apt-get install -y python3 libelf-dev libtool-bin wget
 
       - name: Download toolchain
         run: |
@@ -24,43 +23,35 @@ jobs:
       - name: Build SELF
         run: make all
 
-      - name: Create FSELF + EBOOT.BIN
+      - name: Show outputs
+        run: ls -la neoncity.*
+
+      - name: Make FSELF (final EBOOT)
         run: |
           if [ -f ps3dev/bin/make_fself ]; then
             chmod +x ps3dev/bin/make_fself
-            ps3dev/bin/make_fself neoncity.elf neoncity.fself || cp neoncity.self neoncity.fself
+            ps3dev/bin/make_fself neoncity.elf EBOOT.BIN
+            echo "✅ FSELF created via make_fself"
           else
-            cp neoncity.self neoncity.fself
+            cp neoncity.self EBOOT.BIN
+            echo "⚠️ make_fself not found — using self as EBOOT.BIN"
           fi
-          ls -la neoncity.*
+          ls -la EBOOT.BIN
 
-      - name: Get ps3py (PKG tool)
+      - name: Create HDD folder structure
         run: |
-          git clone --depth 1 https://github.com/ps3dev/ps3py.git /tmp/ps3py
-          ls /tmp/ps3py/src/
+          mkdir -p build_out/USRDIR
+          cp EBOOT.BIN build_out/USRDIR/EBOOT.BIN
+          python3 tools/make_sfo.py build_out/PARAM.SFO || echo "sfo skipped"
+          ls -la build_out/
 
-      - name: Create PKG structure
-        run: |
-          mkdir -p pkgbuild/USRDIR
-          cp neoncity.fself pkgbuild/USRDIR/EBOOT.BIN
-          python3 tools/make_sfo.py pkgbuild/PARAM.SFO
-          ls -la pkgbuild/ pkgbuild/USRDIR/
-
-      - name: Build PKG
-        continue-on-error: true
-        run: |
-          cd ${{ github.workspace }}
-          if [ -f /tmp/ps3py/src/pkg.py ]; then
-            cd /tmp/ps3py/src
-            python3 pkg.py --contentid UP0001-NEONCITY1_00-NEONCITY00000001 \
-              ${{ github.workspace }}/pkgbuild/ \
-              ${{ github.workspace }}/neoncity.pkg && echo "PKG OK!" || echo "PKG failed"
-          fi
-          ls -la ${{ github.workspace }}/*.pkg 2>/dev/null || echo "no pkg"
-
-      - name: List outputs
+      - name: Final listing
         if: always()
-        run: ls -la *.self *.elf *.fself *.pkg 2>/dev/null || true
+        run: |
+          echo "=== Files ready for PS3 ==="
+          ls -la EBOOT.BIN neoncity.self neoncity.elf 2>/dev/null
+          echo "=== Folder structure ==="
+          find build_out -type f 2>/dev/null
 
       - name: Upload
         if: always()
@@ -68,9 +59,8 @@ jobs:
         with:
           name: neoncity-build
           path: |
+            EBOOT.BIN
             neoncity.self
             neoncity.elf
-            neoncity.fself
-            neoncity.pkg
-            pkgbuild/**
+            build_out/**
           if-no-files-found: warn
