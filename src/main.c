@@ -1,13 +1,11 @@
 /* =====================================================================
  *  FILE: src/main.c
- *  PROJECT: NEON CITY ULTRA v4 — Unity-Style Edition
+ *  PROJECT: NEON CITY ULTRA v4
  *  DESCRIPTION: PS3 Homebrew 3D 360° car driving game
- *    - Loading screen with progress bar
- *    - Main menu with animated background
- *    - Bloom/glow effects
- *    - Animated clouds + weather (rain)
- *    - Advanced particle system (exhaust, dust, sparks)
- *    - Clean HUD
+ *    - 20 embedded 1024x1024 textures (assets.c)
+ *    - Loading screen, main menu, pause menu
+ *    - Day/night cycle + weather + particles
+ *    - 360° orbit camera
  * ===================================================================== */
 
 #include <stdio.h>
@@ -26,6 +24,12 @@
 #include <tiny3d.h>
 #include <libfont.h>
 
+/* From src/assets.c */
+void assets_init(void);
+u32  assets_count(void);
+const u8* assets_data(int i);
+u32  assets_size(int i);
+
 SYS_PROCESS_PARAM(1001, 0x100000)
 
 __attribute__((weak)) void tiny3d_TextureFormat(int f){ (void)f; }
@@ -35,6 +39,7 @@ __attribute__((weak)) void tiny3d_TextureDisable(void){ }
 #define TINY3D_TEX_FORMAT_A8R8G8B8  0x85
 #endif
 
+/* ===================== CONFIG ===================== */
 #define SCR_W 1280
 #define SCR_H 720
 #define FOV   640.0f
@@ -54,6 +59,7 @@ __attribute__((weak)) void tiny3d_TextureDisable(void){ }
 #define BT_GAS     7
 #define BT_CAFE    8
 
+/* ===================== TEXTURE TYPES ===================== */
 typedef struct { u16 width; u16 height; u32 *bmp_out; } LocalPngData;
 typedef struct { LocalPngData png; u16 w, h; int ok; u32 *pixels; } Tex;
 
@@ -63,7 +69,7 @@ static Tex tex_tower, tex_tower2, tex_house, tex_villa, tex_shop, tex_mall;
 static Tex tex_arena, tex_gas, tex_cafe;
 static Tex tex_tree, tex_tree2, tex_road;
 
-/* Game state */
+/* ===================== STATE ===================== */
 typedef enum { ST_LOADING=0, ST_MENU, ST_PLAYING, ST_PAUSED } GameState;
 static GameState g_state = ST_LOADING;
 static float g_loadProgress = 0.0f;
@@ -74,9 +80,10 @@ static int      g_running = 1;
 static padInfo  g_padInfo;
 static padData  g_padData;
 static int      g_padReady = 0;
-static u8       g_prevL3 = 0, g_prevR3 = 0;
-static u8       g_prevCross = 0, g_prevStart = 0, g_prevUp = 0, g_prevDown = 0;
-static u8       g_prevSelect = 0;
+
+static u8 g_prevL3 = 0, g_prevR3 = 0;
+static u8 g_prevCross = 0, g_prevStart = 0;
+static u8 g_prevUp = 0, g_prevDown = 0;
 
 static float p_x = 0, p_z = 0, p_heading = 0, p_speed = 0, p_boost = 1.0f;
 static float cam_yaw = 0, cam_pitch = 0.35f, cam_dist = 15.0f;
@@ -87,11 +94,9 @@ static int   g_score = 0;
 static float g_msgTimer = 0.0f;
 static char  g_msg[64] = "";
 
-/* Weather */
 static int   g_raining = 0;
 static float g_rainTimer = 0.0f;
 
-/* Clouds */
 static float cloud_x[MAX_CLD], cloud_z[MAX_CLD], cloud_y[MAX_CLD], cloud_sz[MAX_CLD];
 static int   num_clouds = 0;
 
@@ -102,7 +107,6 @@ static int   num_obj = 0;
 static float a_x[MAX_AI], a_z[MAX_AI], a_spd[MAX_AI];
 static int   a_ax[MAX_AI], a_dir[MAX_AI], a_tex[MAX_AI];
 
-/* Particle types */
 #define PT_NITRO   0
 #define PT_DUST    1
 #define PT_SPARK   2
@@ -116,7 +120,7 @@ static u32   prt_col[MAX_PAR];
 static int   prt_type[MAX_PAR];
 static int   num_prt = 0;
 
-/* Pad */
+/* ===================== PAD ===================== */
 #define BTN_SELECT   0x0001
 #define BTN_L3       0x0002
 #define BTN_R3       0x0004
@@ -140,6 +144,7 @@ static int pad_ly(void){ return ((s8*)&g_padData)[7]; }
 static int pad_rx(void){ return ((s8*)&g_padData)[4]; }
 static int pad_ry(void){ return ((s8*)&g_padData)[5]; }
 
+/* ===================== RNG ===================== */
 static unsigned int rng_s = 0xC0FFEE42u;
 static unsigned int rng(void){
     rng_s ^= rng_s << 13; rng_s ^= rng_s >> 17; rng_s ^= rng_s << 5;
@@ -445,6 +450,10 @@ static void textures_init(void){
     tex_upload(&tex_tree);
     tex_upload(&tex_tree2);
     tex_upload(&tex_road);
+
+    /* Embed count so the linker keeps assets.c and all textures */
+    volatile u32 n = assets_count();
+    (void)n;
 }
 
 /* ===================== 3D PROJECTION ===================== */
@@ -510,15 +519,11 @@ static void draw_tex_face(Tex *t,
     }
 }
 
-/* ===================== BLOOM ===================== */
-/* Glow around a point in screen space */
 static void draw_glow(float sx, float sy, float radius, u32 col){
-    /* layered transparent circles */
     for (int layer = 4; layer >= 1; layer--){
         float r = radius * (float)layer / 4.0f;
         u8 a = (u8)(20 + (5 - layer) * 15);
         u32 c = ((u32)a << 24) | (col & 0xFFFFFF);
-        /* draw a filled circle as many horizontal strips */
         for (int dy = -(int)r; dy <= (int)r; dy += 3){
             float w = sqrtf(r*r - dy*dy);
             draw_rect2d(sx - w, sy + dy, w*2, 3, c);
@@ -526,7 +531,6 @@ static void draw_glow(float sx, float sy, float radius, u32 col){
     }
 }
 
-/* ===================== GROUND SHADOW ===================== */
 static void draw_ground_plate(float cx, float cz, float w, float d, u32 col){
     float hw=w*0.5f, hd=d*0.5f;
     draw_tex_face(NULL,
@@ -541,7 +545,6 @@ static void draw_shadow(float cx, float cz, float w, float d){
     draw_ground_plate(cx, cz, w*1.00f, d*1.00f, 0x80000000u);
 }
 
-/* ===================== BILLBOARD ===================== */
 static void draw_billboard(Tex *t, float wx, float wy, float wz,
                             float w, float h, u32 col){
     float fx=wx-p_x, fz=wz-p_z;
@@ -732,10 +735,8 @@ static void spawn_particle(int type, float x,float y,float z,
 static void update_particles(float dt){
     for (int i = num_prt-1; i >= 0; i--){
         prt_x[i]+=prt_vx[i]*dt; prt_y[i]+=prt_vy[i]*dt; prt_z[i]+=prt_vz[i]*dt;
-        if (prt_type[i] == PT_RAIN)
-            prt_vy[i] -= 2.0f*dt;
-        else
-            prt_vy[i] -= 6.0f*dt;
+        if (prt_type[i] == PT_RAIN) prt_vy[i] -= 2.0f*dt;
+        else prt_vy[i] -= 6.0f*dt;
         prt_life[i]--;
         if (prt_life[i]<=0 || prt_y[i] < -2.0f){
             prt_x[i]=prt_x[num_prt-1]; prt_y[i]=prt_y[num_prt-1]; prt_z[i]=prt_z[num_prt-1];
@@ -784,7 +785,7 @@ static int hit_obj(float x,float z,float r, int* out_type){
     return 0;
 }
 
-/* ===================== MESSAGES ===================== */
+/* ===================== MSG ===================== */
 static void show_msg(const char* m){
     strncpy(g_msg, m, 63); g_msg[63]=0;
     g_msgTimer = 2.0f;
@@ -803,7 +804,6 @@ static void update_game(float dt){
     if (btn & BTN_L2) cam_dist -= 15.0f*dt;
     cam_dist = clampf(cam_dist, 6.0f, 35.0f);
 
-    /* L3: change car color */
     u8 l3 = (btn & BTN_L3) ? 1 : 0;
     if (l3 && !g_prevL3){
         g_carTex = (g_carTex + 1) % 5;
@@ -814,7 +814,6 @@ static void update_game(float dt){
     }
     g_prevL3 = l3;
 
-    /* R3: teleport */
     u8 r3 = (btn & BTN_R3) ? 1 : 0;
     if (r3 && !g_prevR3){
         p_x = 0; p_z = 0; p_speed = 0; p_heading = 0;
@@ -822,9 +821,8 @@ static void update_game(float dt){
     }
     g_prevR3 = r3;
 
-    /* Start: pause */
     u8 st = (btn & BTN_START) ? 1 : 0;
-    if (st && !g_prevStart){ g_state = ST_PAUSED; }
+    if (st && !g_prevStart){ g_state = ST_PAUSED; g_menuSel = 0; }
     g_prevStart = st;
 
     float thr = -(ly/128.0f);
@@ -834,7 +832,6 @@ static void update_game(float dt){
     if (btn & BTN_LEFT)  stt = 1.0f;
     if (btn & BTN_RIGHT) stt = -1.0f;
 
-    /* boost + nitro particles */
     if ((btn & BTN_R1) && p_boost > 0.0f){
         p_speed += 45.0f*dt;
         p_boost -= 0.45f*dt;
@@ -842,27 +839,23 @@ static void update_game(float dt){
         float bz = p_z - cosf(p_heading)*3.0f;
         for (int k=0;k<3;k++){
             spawn_particle(PT_NITRO,
-                bx+(rng()%100-50)*0.05f,
-                0.5f+(rng()%100)*0.02f,
+                bx+(rng()%100-50)*0.05f, 0.5f+(rng()%100)*0.02f,
                 bz+(rng()%100-50)*0.05f,
                 (rng()%100-50)*0.03f - sinf(p_heading)*3.0f,
                 (rng()%100)*0.02f,
                 (rng()%100-50)*0.03f - cosf(p_heading)*3.0f,
-                (k%2) ? 0xFFFF8800u : 0xFFFFDD00u,
-                30 + rng()%20);
+                (k%2) ? 0xFFFF8800u : 0xFFFFDD00u, 30 + rng()%20);
         }
     } else {
         p_boost = clampf(p_boost + 0.15f*dt, 0.0f, 1.0f);
     }
 
-    /* brake + dust particles */
     if (btn & BTN_L1){
         p_speed *= (1.0f - 3.5f*dt);
         g_shake = 0.5f;
         if (fabsf(p_speed) > 10.0f && (rng()%3==0)){
             spawn_particle(PT_DUST,
-                p_x + (rng()%100-50)*0.05f,
-                0.2f,
+                p_x + (rng()%100-50)*0.05f, 0.2f,
                 p_z + (rng()%100-50)*0.05f,
                 (rng()%100-50)*0.05f, 1.0f, (rng()%100-50)*0.05f,
                 0xFFCCCCCCu, 20 + rng()%15);
@@ -879,12 +872,10 @@ static void update_game(float dt){
         p_heading += stt * 2.2f * gain * dt * sgn;
     }
 
-    /* exhaust smoke */
     if (fabsf(p_speed) > 2.0f && (rng()%4==0)){
         float bx = p_x - sinf(p_heading)*2.5f;
         float bz = p_z - cosf(p_heading)*2.5f;
-        spawn_particle(PT_SMOKE,
-            bx, 0.3f, bz,
+        spawn_particle(PT_SMOKE, bx, 0.3f, bz,
             (rng()%100-50)*0.02f, 0.5f, (rng()%100-50)*0.02f,
             0x80888888u, 25);
     }
@@ -897,12 +888,10 @@ static void update_game(float dt){
     if (!hit_obj(nx, p_z, 1.8f, &t_type)) p_x = nx;
     else {
         p_speed *= 0.15f; g_shake = 0.8f;
-        for (int k=0;k<8;k++){
-            spawn_particle(PT_SPARK,
-                nx, 0.5f, p_z,
+        for (int k=0;k<8;k++)
+            spawn_particle(PT_SPARK, nx, 0.5f, p_z,
                 (rng()%100-50)*0.1f, (rng()%100)*0.1f, (rng()%100-50)*0.1f,
                 0xFFFFDD00u, 15);
-        }
         if (t_type == BT_SHOP || t_type == BT_MALL){ g_score += 10; show_msg("Shopped! +10"); }
         else if (t_type == BT_GAS){ p_boost = 1.0f; show_msg("Refueled!"); }
         else if (t_type == BT_CAFE){ g_score += 5; show_msg("Coffee! +5"); }
@@ -910,12 +899,10 @@ static void update_game(float dt){
     if (!hit_obj(p_x, nz, 1.8f, &t_type)) p_z = nz;
     else {
         p_speed *= 0.15f; g_shake = 0.8f;
-        for (int k=0;k<8;k++){
-            spawn_particle(PT_SPARK,
-                p_x, 0.5f, nz,
+        for (int k=0;k<8;k++)
+            spawn_particle(PT_SPARK, p_x, 0.5f, nz,
                 (rng()%100-50)*0.1f, (rng()%100)*0.1f, (rng()%100-50)*0.1f,
                 0xFFFFDD00u, 15);
-        }
         if (t_type == BT_SHOP || t_type == BT_MALL){ g_score += 10; show_msg("Shopped! +10"); }
         else if (t_type == BT_GAS){ p_boost = 1.0f; show_msg("Refueled!"); }
         else if (t_type == BT_CAFE){ g_score += 5; show_msg("Coffee! +5"); }
@@ -933,21 +920,14 @@ static void update_game(float dt){
         if (g_msgTimer < 0.0f) g_msgTimer = 0.0f;
     }
 
-    /* weather */
     g_rainTimer += dt;
-    if (g_rainTimer > 40.0f){
-        g_rainTimer = 0.0f;
-        g_raining = !g_raining;
-    }
+    if (g_rainTimer > 40.0f){ g_rainTimer = 0.0f; g_raining = !g_raining; }
     if (g_raining && (rng()%2==0)){
-        for (int k=0;k<6;k++){
+        for (int k=0;k<6;k++)
             spawn_particle(PT_RAIN,
-                p_x + (rng()%100 - 50)*0.5f,
-                20.0f + (rng()%10),
+                p_x + (rng()%100 - 50)*0.5f, 20.0f + (rng()%10),
                 p_z + (rng()%100 - 50)*0.5f,
-                0.0f, -30.0f, 0.0f,
-                0x8066AACC, 30);
-        }
+                0.0f, -30.0f, 0.0f, 0x8066AACC, 30);
     }
 
     update_ai(dt);
@@ -975,7 +955,6 @@ static u32 sky_col_mid(void){
 
 /* ===================== RENDER WORLD ===================== */
 static void render_world(void){
-    /* sky */
     u32 skyTop = sky_col_top();
     u32 skyMid = sky_col_mid();
     float sY = sinf((g_timeOfDay - 0.25f) * 6.2831853f);
@@ -987,7 +966,6 @@ static void render_world(void){
     draw_rect2d(0, SCR_H*0.50f, SCR_W, SCR_H*0.08f, horizon);
     draw_rect2d(0, SCR_H*0.58f, SCR_W, 4, 0xFFFFCC88u);
 
-    /* sun / moon with bloom */
     if (sY > 0){
         int sx = (int)(SCR_W * 0.65f);
         int sy = (int)(SCR_H * 0.30f - sY * SCR_H * 0.20f);
@@ -1012,20 +990,17 @@ static void render_world(void){
                 }
     }
 
-    /* regenerate city on move */
     static float last_x = 1e9f, last_z = 1e9f;
     if (fabsf(p_x-last_x) > 20.0f || fabsf(p_z-last_z) > 20.0f){
         gen_city();
         last_x = p_x; last_z = p_z;
     }
 
-    /* ground */
     int bI = (int)(p_x/60.0f), bJ = (int)(p_z/60.0f);
     for (int i=-4;i<=4;i++)
         for (int j=-4;j<=4;j++)
             draw_ground_tex((bI+i)*60.0f, (bJ+j)*60.0f, 60.0f, &tex_road);
 
-    /* clouds (billboards) */
     for (int i=0; i<num_clouds; i++){
         float dx = cloud_x[i]-p_x, dz = cloud_z[i]-p_z;
         if (dx*dx + dz*dz > 900.0f*900.0f) continue;
@@ -1033,7 +1008,6 @@ static void render_world(void){
                        cloud_sz[i], cloud_sz[i]*0.4f, 0x80FFFFFFu);
     }
 
-    /* sort objects by distance */
     int ord[MAX_OBJ];
     float dist[MAX_OBJ];
     for (int i=0;i<num_obj;i++){
@@ -1066,14 +1040,12 @@ static void render_world(void){
         }
     }
 
-    /* AI cars */
     for (int i=0;i<MAX_AI;i++){
         Tex *tt = ai_tex(a_tex[i]);
         draw_shadow(a_x[i], a_z[i], 4.0f, 5.5f);
         draw_billboard(tt, a_x[i], 0.15f, a_z[i], 5.5f, 2.8f, 0xFFFFFFFFu);
     }
 
-    /* player car */
     Tex *pcar = &tex_car_red;
     switch(g_carTex){
         case 1: pcar = &tex_car_blue; break;
@@ -1083,7 +1055,6 @@ static void render_world(void){
     }
     draw_shadow(p_x, p_z, 5.0f, 6.5f);
 
-    /* car headlights bloom at night */
     if (sY < 0){
         float hlx = p_x + sinf(p_heading)*2.5f;
         float hlz = p_z + cosf(p_heading)*2.5f;
@@ -1094,7 +1065,6 @@ static void render_world(void){
 
     draw_billboard(pcar, p_x, 0.15f, p_z, 6.0f, 3.0f, 0xFFFFFFFFu);
 
-    /* particles */
     for (int i=0;i<num_prt;i++){
         float sz = 0.5f;
         u32 col = prt_col[i];
@@ -1106,7 +1076,6 @@ static void render_world(void){
         draw_billboard(&tex_road, prt_x[i], prt_y[i], prt_z[i], sz, sz, col);
     }
 
-    /* rain overlay */
     if (g_raining){
         for (int i=0; i<8; i++){
             int rx = (int)((rng()%SCR_W));
@@ -1119,7 +1088,6 @@ static void render_world(void){
 static void draw_hud(void){
     char buf[128];
 
-    /* top-left panel */
     draw_rect2d(15, 15, 260, 70, 0x80000000u);
     draw_rect2d(15, 15, 260, 3, 0xFF00D4FFu);
 
@@ -1131,7 +1099,6 @@ static void draw_hud(void){
     SetFontColor(0xFFFF6B35u, 0x00000000);
     DrawString(27, 68, "U L T R A   v 4");
 
-    /* speed panel */
     draw_rect2d(15, SCR_H - 130, 240, 115, 0x80000000u);
     draw_rect2d(15, SCR_H - 130, 3, 115, 0xFFFFCC00u);
 
@@ -1144,21 +1111,17 @@ static void draw_hud(void){
     SetFontColor(0xFFFFE080u, 0x00000000);
     DrawString(140, SCR_H - 95, "KM/H");
 
-    /* boost bar */
     SetFontSize(12, 12);
     SetFontColor(0xFFFF6B35u, 0x00000000);
     DrawString(30, SCR_H - 60, "BOOST");
     draw_rect2d(90, SCR_H - 63, 150, 12, 0xFF222222u);
     draw_rect2d(90, SCR_H - 63, (int)(p_boost*150.0f), 12, 0xFFFF6B35u);
-    draw_rect2d(90, SCR_H - 63, 150, 1, 0xFFFFFFFFu);
 
-    /* score */
     SetFontSize(14, 14);
     SetFontColor(0xFF2ECC71u, 0x00000000);
     sprintf(buf, "SCORE: %d", g_score);
     DrawString(30, SCR_H - 35, buf);
 
-    /* message */
     if (g_msgTimer > 0.0f){
         int w = (int)strlen(g_msg)*12;
         draw_rect2d(SCR_W/2 - w/2 - 20, 110, w + 40, 40, 0x80000000u);
@@ -1167,7 +1130,6 @@ static void draw_hud(void){
         DrawString(SCR_W/2 - w/2, 138, g_msg);
     }
 
-    /* minimap */
     {
         int mx = SCR_W - 210, my = 20, ms = 190;
         draw_rect2d(mx-3, my-3, ms+6, ms+6, 0xFFFFCC00u);
@@ -1199,7 +1161,6 @@ static void draw_hud(void){
         DrawString(mx+ms-14, my+15, "N");
     }
 
-    /* clock */
     int hours = (int)((g_timeOfDay*24.0f) + 6.0f) % 24;
     int minutes = (int)((((g_timeOfDay*24.0f) + 6.0f) - (float)hours) * 60.0f);
     sprintf(buf, "%02d:%02d", hours, minutes);
@@ -1208,26 +1169,23 @@ static void draw_hud(void){
     SetFontColor(0xFFFFE080u, 0x00000000);
     DrawString(SCR_W - 125, SCR_H - 32, buf);
 
-    /* hints */
     SetFontSize(11, 11);
     SetFontColor(0xFFBBBBBBu, 0x00000000);
     DrawString(24, SCR_H - 8, "L:drive  R:cam  R1:nitro  L1:brake  L3:color  R3:reset  START:pause");
 }
 
-/* ===================== LOADING SCREEN ===================== */
+/* ===================== LOADING ===================== */
 static void draw_loading(float dt){
     g_loadProgress += dt * 0.35f;
     if (g_loadProgress > 1.0f) g_loadProgress = 1.0f;
 
     tiny3d_Clear(0xFF05101Fu, 0xFFFFFFFF);
 
-    /* background grid */
     for (int i = 0; i < 20; i++){
         int y = 40 + i*36;
         draw_rect2d(0, y, SCR_W, 1, 0x3000D4FFu);
     }
 
-    /* glow behind title */
     draw_glow(SCR_W/2, 200, 250, 0xFF00AAFFu);
 
     SetFontSize(80, 80);
@@ -1238,7 +1196,6 @@ static void draw_loading(float dt){
     SetFontColor(0xFFFF6B35u, 0x00000000);
     DrawString(SCR_W/2 - 100, 300, "U L T R A   v 4");
 
-    /* progress bar */
     int bw = 600;
     int bx = SCR_W/2 - bw/2;
     int by = 480;
@@ -1267,18 +1224,16 @@ static void draw_loading(float dt){
     }
 }
 
-/* ===================== MAIN MENU ===================== */
+/* ===================== MENU ===================== */
 static void draw_menu(float dt){
     g_menuTimer += dt;
 
-    /* animated sky background */
     u32 skyTop = 0xFF05101Fu;
     u32 skyMid = 0xFF1A4070u;
     tiny3d_Clear(skyTop, 0xFFFFFFFF);
     draw_rect2d(0, 0, SCR_W, SCR_H*0.5f, skyTop);
     draw_rect2d(0, SCR_H*0.5f, SCR_W, SCR_H*0.5f, 0xFF0A1525u);
 
-    /* moving stars */
     for (int i=0; i<80; i++){
         int sx = (i*173 + (int)(g_menuTimer*30)) % SCR_W;
         int sy = (i*67) % (SCR_H/2);
@@ -1286,7 +1241,6 @@ static void draw_menu(float dt){
         draw_rect2d(sx, sy, 2, 2, 0xFF000000u | ((u32)b<<16) | ((u32)b<<8) | b);
     }
 
-    /* perspective grid */
     for (int i=-10; i<=10; i++){
         float x1 = SCR_W/2.0f + i*30;
         float x2 = SCR_W/2.0f + i*200;
@@ -1306,7 +1260,6 @@ static void draw_menu(float dt){
         draw_rect2d(0, y, SCR_W, 1, 0x3000D4FFu);
     }
 
-    /* glow title */
     draw_glow(SCR_W/2, 180, 300, 0xFF00AAFFu);
 
     SetFontSize(90, 90);
@@ -1317,10 +1270,8 @@ static void draw_menu(float dt){
     SetFontColor(0xFFFF6B35u, 0x00000000);
     DrawString(SCR_W/2 - 110, 290, "U L T R A   v 4");
 
-    /* menu items */
     const char *items[] = { "START GAME", "INSTRUCTIONS", "EXIT" };
-    int num_items = 3;
-    for (int i=0; i<num_items; i++){
+    for (int i=0; i<3; i++){
         int y = 420 + i*70;
         int x = SCR_W/2 - 180;
 
@@ -1344,7 +1295,6 @@ static void draw_menu(float dt){
         DrawString(x, y+14, items[i]);
     }
 
-    /* footer */
     SetFontSize(12, 12);
     SetFontColor(0xFF888888u, 0x00000000);
     DrawString(SCR_W/2 - 180, SCR_H - 40, "D-PAD: navigate     CROSS: select");
@@ -1378,13 +1328,13 @@ static void draw_pause(void){
     }
 }
 
-/* ===================== UPDATE MENU ===================== */
+/* ===================== MENU INPUT ===================== */
 static void update_menu(float dt){
     if (!g_padReady) return;
     u16 btn = pad_btns();
 
-    u8 up   = (btn & BTN_UP) ? 1 : 0;
-    u8 down = (btn & BTN_DOWN) ? 1 : 0;
+    u8 up    = (btn & BTN_UP) ? 1 : 0;
+    u8 down  = (btn & BTN_DOWN) ? 1 : 0;
     u8 cross = (btn & BTN_CROSS) ? 1 : 0;
 
     if (up && !g_prevUp){ g_menuSel--; if (g_menuSel < 0) g_menuSel = 2; }
@@ -1395,7 +1345,6 @@ static void update_menu(float dt){
 
     if (cross && !g_prevCross){
         if (g_menuSel == 0){
-            /* reset game */
             p_x = 0; p_z = 0; p_heading = 0; p_speed = 0; p_boost = 1.0f;
             g_score = 0;
             gen_city();
@@ -1418,8 +1367,8 @@ static void update_menu(float dt){
 static void update_pause(float dt){
     if (!g_padReady) return;
     u16 btn = pad_btns();
-    u8 up   = (btn & BTN_UP) ? 1 : 0;
-    u8 down = (btn & BTN_DOWN) ? 1 : 0;
+    u8 up    = (btn & BTN_UP) ? 1 : 0;
+    u8 down  = (btn & BTN_DOWN) ? 1 : 0;
     u8 cross = (btn & BTN_CROSS) ? 1 : 0;
     u8 st    = (btn & BTN_START) ? 1 : 0;
 
@@ -1453,6 +1402,9 @@ int main(int argc, char *argv[]){
     if (tiny3d_Init(1024*1024) != 0) return 1;
     ResetFont();
 
+    /* Load embedded textures (20 x 1024x1024) */
+    assets_init();
+
     textures_init();
     gen_city();
     init_ai();
@@ -1466,10 +1418,6 @@ int main(int argc, char *argv[]){
         g_padReady = 0;
         if (ioPadGetInfo(&g_padInfo) == 0 && g_padInfo.status[0]){
             if (ioPadGetData(0, &g_padData) == 0) g_padReady = 1;
-        }
-
-        if (g_padReady && (pad_btns() & BTN_SELECT) && g_state == ST_MENU){
-            g_running = 0;
         }
 
         float dt = 1.0f / 60.0f;
