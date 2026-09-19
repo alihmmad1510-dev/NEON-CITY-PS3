@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Generate PS3 PARAM.SFO file."""
+# =====================================================================
+#  FILE: tools/make_sfo.py
+#  PROJECT: NEON CITY ULTRA v3
+#  DESCRIPTION: Generate PS3 PARAM.SFO file
+# =====================================================================
+
 import struct
 import sys
 
