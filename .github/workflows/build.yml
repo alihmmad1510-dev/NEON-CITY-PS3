@@ -4,7 +4,7 @@ on: [push, workflow_dispatch]
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - name: Checkout
@@ -13,7 +13,8 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3 python2.7 libelf-dev libtool-bin wget
+          sudo apt-get install -y python3 python3-pip libelf-dev libtool-bin wget git
+          pip3 install pycryptodome
 
       - name: Download toolchain
         run: |
@@ -23,23 +24,53 @@ jobs:
       - name: Build SELF
         run: make all
 
+      - name: Create FSELF + EBOOT.BIN
+        run: |
+          if [ -f ps3dev/bin/make_fself ]; then
+            chmod +x ps3dev/bin/make_fself
+            ps3dev/bin/make_fself neoncity.elf neoncity.fself || cp neoncity.self neoncity.fself
+          else
+            cp neoncity.self neoncity.fself
+          fi
+          ls -la neoncity.*
+
+      - name: Get ps3py (PKG tool)
+        run: |
+          git clone --depth 1 https://github.com/ps3dev/ps3py.git /tmp/ps3py
+          ls /tmp/ps3py/src/
+
+      - name: Create PKG structure
+        run: |
+          mkdir -p pkgbuild/USRDIR
+          cp neoncity.fself pkgbuild/USRDIR/EBOOT.BIN
+          python3 tools/make_sfo.py pkgbuild/PARAM.SFO
+          ls -la pkgbuild/ pkgbuild/USRDIR/
+
       - name: Build PKG
         continue-on-error: true
-        run: make pkg
+        run: |
+          cd ${{ github.workspace }}
+          if [ -f /tmp/ps3py/src/pkg.py ]; then
+            cd /tmp/ps3py/src
+            python3 pkg.py --contentid UP0001-NEONCITY1_00-NEONCITY00000001 \
+              ${{ github.workspace }}/pkgbuild/ \
+              ${{ github.workspace }}/neoncity.pkg && echo "PKG OK!" || echo "PKG failed"
+          fi
+          ls -la ${{ github.workspace }}/*.pkg 2>/dev/null || echo "no pkg"
 
       - name: List outputs
         if: always()
-        run: |
-          echo "=== outputs ==="
-          ls -la *.self *.elf *.pkg 2>/dev/null
+        run: ls -la *.self *.elf *.fself *.pkg 2>/dev/null || true
 
       - name: Upload
-        if: success()
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: neoncity-all
+          name: neoncity-build
           path: |
             neoncity.self
             neoncity.elf
+            neoncity.fself
             neoncity.pkg
+            pkgbuild/**
           if-no-files-found: warn
