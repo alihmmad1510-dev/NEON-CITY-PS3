@@ -13,37 +13,33 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y python2.7 libelf-dev libtool-bin wget
+          sudo apt-get install -y python3 python2.7 libelf-dev libtool-bin wget
 
       - name: Download toolchain
         run: |
-          cd ${{ github.workspace }}
           wget -q https://github.com/bucanero/ps3toolchain/releases/download/ubuntu-latest-fad3b5fb/ps3dev-ubuntu-latest-2020-08-31.tar.gz
           tar xzf ps3dev-ubuntu-latest-2020-08-31.tar.gz
-          echo "=== ps3dev top-level ==="
-          ls -la ps3dev/
-          echo "=== find any gcc ==="
-          find ps3dev -name "*gcc*" -type f 2>/dev/null | head -10
-          echo "=== find ppu-rules ==="
-          find ps3dev -name "ppu_rules" -type f 2>/dev/null
 
-      - name: Build
+      - name: Build SELF
         run: make all
+
+      - name: Build PKG
+        continue-on-error: true
+        run: make pkg
 
       - name: List outputs
         if: always()
         run: |
-          echo "=== build dir ==="
-          ls -la
-          echo "=== self/elf files ==="
-          ls -la *.self *.elf 2>/dev/null || echo "no outputs found"
+          echo "=== outputs ==="
+          ls -la *.self *.elf *.pkg 2>/dev/null
 
       - name: Upload
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: neoncity-build
+          name: neoncity-all
           path: |
-            *.self
-            *.elf
+            neoncity.self
+            neoncity.elf
+            neoncity.pkg
           if-no-files-found: warn
