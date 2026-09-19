@@ -1,7 +1,7 @@
 # =====================================================================
 #  FILE: .github/workflows/build.yml
 #  PROJECT: NEON CITY ULTRA v4
-#  DESCRIPTION: Generate textures + assembly files → 60MB EBOOT.BIN
+#  DESCRIPTION: 20 textures via .incbin → 60MB EBOOT.BIN
 # =====================================================================
 
 name: Build NEON CITY PKG
@@ -32,29 +32,28 @@ jobs:
           if [ ! -f "$PYD/make_textures.py" ]; then
             if [ -f "tools/make_textures.py" ]; then PYD="tools"; fi
           fi
+          echo "Using: $PYD"
           OUT_DIR=$PWD python3 $PYD/make_textures.py 20
           ls -lh texture*.png
 
-      - name: Generate assembly files (.incbin)
+      - name: Generate assembly files (.S)
         run: |
           WORKDIR=$(pwd)
           echo "Working dir: $WORKDIR"
           for i in 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19; do
-            cat > texture${i}.S << EOF
-	.section .rodata
-	.globl _binary_texture${i}_png_start
-	.globl _binary_texture${i}_png_end
-_binary_texture${i}_png_start:
-	.incbin "${WORKDIR}/texture${i}.png"
-_binary_texture${i}_png_end:
-	.byte 0
-	.p2align 4
-EOF
+            printf '\t.section .rodata\n' > "texture${i}.S"
+            printf '\t.globl _binary_texture%s_png_start\n' "${i}" >> "texture${i}.S"
+            printf '\t.globl _binary_texture%s_png_end\n' "${i}" >> "texture${i}.S"
+            printf '_binary_texture%s_png_start:\n' "${i}" >> "texture${i}.S"
+            printf '\t.incbin "%s/texture%s.png"\n' "${WORKDIR}" "${i}" >> "texture${i}.S"
+            printf '_binary_texture%s_png_end:\n' "${i}" >> "texture${i}.S"
+            printf '\t.byte 0\n' >> "texture${i}.S"
+            printf '\t.p2align 4\n' >> "texture${i}.S"
           done
-          echo "=== Sample .S file ==="
-          cat texture00.S
           echo "=== All .S files ==="
-          ls -lh texture*.S
+          ls -la texture*.S
+          echo "=== texture00.S content ==="
+          cat texture00.S
 
       - name: Build 60MB ELF + SELF
         run: make all
