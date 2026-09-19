@@ -1,7 +1,7 @@
 # =====================================================================
 #  FILE: .github/workflows/build.yml
 #  PROJECT: NEON CITY ULTRA v4
-#  DESCRIPTION: 20 textures via .incbin → 60MB EBOOT.BIN
+#  DESCRIPTION: Build 60MB game with textures + ICON.PNG + WALLPAPER.PNG
 # =====================================================================
 
 name: Build NEON CITY PKG
@@ -26,20 +26,21 @@ jobs:
           wget -q https://github.com/bucanero/ps3toolchain/releases/download/ubuntu-latest-fad3b5fb/ps3dev-ubuntu-latest-2020-08-31.tar.gz
           tar xzf ps3dev-ubuntu-latest-2020-08-31.tar.gz
 
-      - name: Generate 20 textures (~60MB)
+      - name: List repo files
         run: |
-          PYD="toles"
-          if [ ! -f "$PYD/make_textures.py" ]; then
-            if [ -f "tools/make_textures.py" ]; then PYD="tools"; fi
-          fi
-          echo "Using: $PYD"
-          OUT_DIR=$PWD python3 $PYD/make_textures.py 20
-          ls -lh texture*.png
+          echo "=== repo root ==="
+          ls -la
+          echo "=== toles ==="
+          ls -la toles/ 2>/dev/null || echo "no toles"
 
-      - name: Generate assembly files (.S)
+      - name: Generate 20 textures
+        run: |
+          OUT_DIR=$PWD python3 toles/make_textures.py 20
+          ls -lh texture*.png | head
+
+      - name: Generate assembly files
         run: |
           WORKDIR=$(pwd)
-          echo "Working dir: $WORKDIR"
           for i in 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19; do
             printf '\t.section .rodata\n' > "texture${i}.S"
             printf '\t.globl _binary_texture%s_png_start\n' "${i}" >> "texture${i}.S"
@@ -47,15 +48,11 @@ jobs:
             printf '_binary_texture%s_png_start:\n' "${i}" >> "texture${i}.S"
             printf '\t.incbin "%s/texture%s.png"\n' "${WORKDIR}" "${i}" >> "texture${i}.S"
             printf '_binary_texture%s_png_end:\n' "${i}" >> "texture${i}.S"
-            printf '\t.byte 0\n' >> "texture${i}.S"
-            printf '\t.p2align 4\n' >> "texture${i}.S"
+            printf '\t.byte 0\n\t.p2align 4\n' >> "texture${i}.S"
           done
-          echo "=== All .S files ==="
-          ls -la texture*.S
-          echo "=== texture00.S content ==="
-          cat texture00.S
+          ls texture*.S | wc -l
 
-      - name: Build 60MB ELF + SELF
+      - name: Build ELF + SELF
         run: make all
 
       - name: Make FSELF
@@ -70,28 +67,27 @@ jobs:
 
       - name: Get ps3py
         run: |
-          git clone --depth 1 --branch use-python3 https://github.com/sahlberg/PSL1GHT.git /tmp/psl1ght-py3
-          ls /tmp/psl1ght-py3/tools/ps3py/ 2>/dev/null | head || true
+          git clone --depth 1 --branch use-python3 https://github.com/sahlberg/PSL1GHT.git /tmp/psl1ght-py3 || true
 
       - name: Build pkgcrypt
         continue-on-error: true
         run: |
           cd /tmp/psl1ght-py3/tools/ps3py
-          python3 setup.py build_ext --inplace 2>&1 | head -20 || true
+          python3 setup.py build_ext --inplace 2>&1 | head -10 || true
 
       - name: Prepare PKG structure
         run: |
           mkdir -p pkgbuild/USRDIR
           cp neoncity.fself pkgbuild/USRDIR/EBOOT.BIN
 
-          PYD="toles"
-          if [ ! -f "$PYD/make_sfo.py" ]; then
-            if [ -f "tools/make_sfo.py" ]; then PYD="tools"; fi
-          fi
-          python3 $PYD/make_sfo.py pkgbuild/PARAM.SFO || echo "sfo skipped"
+          python3 toles/make_sfo.py pkgbuild/PARAM.SFO || echo "sfo skipped"
 
-          OUT_DIR=$PWD python3 $PYD/make_icons.py 2>/dev/null || true
+          echo "=== Generating icons ==="
+          OUT_DIR=$PWD python3 toles/make_icons.py
+
           if [ -f ICON0.PNG ]; then cp ICON0.PNG pkgbuild/ICON0.PNG; fi
+          if [ -f PIC0.PNG ];  then cp PIC0.PNG  pkgbuild/PIC0.PNG;  fi
+          if [ -f PIC1.PNG ];  then cp PIC1.PNG  pkgbuild/PIC1.PNG;  fi
 
           echo "=== PKG contents ==="
           find pkgbuild -type f -exec ls -lh {} \;
@@ -100,28 +96,19 @@ jobs:
       - name: Build PKG
         continue-on-error: true
         run: |
-          set +e
           cd /tmp/psl1ght-py3/tools/ps3py
           BUILD_DIR="${{ github.workspace }}/pkgbuild"
           OUT_PKG="${{ github.workspace }}/neoncity.pkg"
           CID="UP0001-NEONCITY1_00-NEONCITY00000001"
-
           python3 pkg.py --contentid "$CID" "$BUILD_DIR" "$OUT_PKG" 2>&1
-          if [ -f "$OUT_PKG" ]; then echo "PKG V1 OK"; exit 0; fi
-
-          python3 pkg.py "$CID" "$BUILD_DIR" "$OUT_PKG" 2>&1
-          if [ -f "$OUT_PKG" ]; then echo "PKG V2 OK"; exit 0; fi
-
-          python3 pkg.py -c "$CID" "$BUILD_DIR" "$OUT_PKG" 2>&1
-          if [ -f "$OUT_PKG" ]; then echo "PKG V3 OK"; exit 0; fi
+          if [ -f "$OUT_PKG" ]; then echo "PKG OK"; exit 0; fi
+          python3 pkg.py "$CID" "$BUILD_DIR" "$OUT_PKG" 2>&1 || true
 
       - name: Final listing
         if: always()
         run: |
-          echo "=== Outputs ==="
-          ls -lh neoncity.self neoncity.elf neoncity.fself neoncity.pkg ICON0.PNG 2>/dev/null || true
+          ls -lh neoncity.pkg neoncity.fself neoncity.self ICON0.PNG PIC0.PNG PIC1.PNG 2>/dev/null || true
           echo ""
-          echo "=== PKG SIZE ==="
           du -h neoncity.pkg 2>/dev/null || echo "no pkg"
 
       - uses: actions/upload-artifact@v4
@@ -133,4 +120,6 @@ jobs:
             neoncity.fself
             neoncity.self
             ICON0.PNG
+            PIC0.PNG
+            PIC1.PNG
           if-no-files-found: warn
