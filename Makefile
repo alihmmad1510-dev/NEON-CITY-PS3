@@ -1,7 +1,6 @@
 # =====================================================================
 #  FILE: Makefile
-#  PROJECT: NEON CITY ULTRA v4
-#  DESCRIPTION: Build with 20 embedded textures (60MB ELF)
+#  PROJECT: NEON CITY ULTRA v5
 # =====================================================================
 
 .RECIPEPREFIX = >
@@ -13,8 +12,10 @@ export PS3DEV  := $(CURDIR)/ps3dev
 
 SRC_MAIN   := src/main.c
 SRC_ASSETS := src/assets.c
+SRC_OBJ    := src/obj_loader.c
 OBJ_MAIN   := src/main.o
 OBJ_ASSETS := src/assets.o
+OBJ_OBJ    := src/obj_loader.o
 
 TEXTURE_OBJS := texture00.o texture01.o texture02.o texture03.o texture04.o \
                 texture05.o texture06.o texture07.o texture08.o texture09.o \
@@ -32,7 +33,7 @@ PORT_INC := $(shell find $(PS3DEV) -type d -path "*portlibs/ppu/include" 2>/dev/
 PS3_LIB  := $(shell find $(PS3DEV) -type d -path "*/ppu/lib" 2>/dev/null | grep -v portlibs | head -1)
 PORT_LIB := $(shell find $(PS3DEV) -type d -path "*portlibs/ppu/lib" 2>/dev/null | head -1)
 
-CFLAGS  := -O2 -mhard-float -Wno-implicit-function-declaration -I$(PS3_INC) -I$(PORT_INC)
+CFLAGS  := -O2 -mhard-float -Wno-implicit-function-declaration -I$(PS3_INC) -I$(PORT_INC) -Isrc
 LDFLAGS := -L$(PS3_LIB) -L$(PORT_LIB)
 LIBS    := -ltiny3d -lrsx -lgcm_sys -lio -lsysutil -lsysmodule -lfont3d -lm -lnet -lrt -llv2
 
@@ -50,9 +51,13 @@ $(OBJ_ASSETS): $(SRC_ASSETS)
 > @mkdir -p src
 > $(PPU_GCC) $(CFLAGS) -c $< -o $@
 
-$(TARGET).elf: $(OBJ_MAIN) $(OBJ_ASSETS) $(TEXTURE_OBJS)
+$(OBJ_OBJ): $(SRC_OBJ)
+> @mkdir -p src
+> $(PPU_GCC) $(CFLAGS) -c $< -o $@
+
+$(TARGET).elf: $(OBJ_MAIN) $(OBJ_ASSETS) $(OBJ_OBJ) $(TEXTURE_OBJS)
 > @echo "=== LINKING ==="
-> $(PPU_GCC) $(OBJ_MAIN) $(OBJ_ASSETS) $(TEXTURE_OBJS) $(LDFLAGS) $(LIBS) -o $@
+> $(PPU_GCC) $(OBJ_MAIN) $(OBJ_ASSETS) $(OBJ_OBJ) $(TEXTURE_OBJS) $(LDFLAGS) $(LIBS) -o $@
 > @ls -lh $@
 
 $(TARGET).self: $(TARGET).elf
@@ -64,7 +69,7 @@ $(TARGET).self: $(TARGET).elf
 > @ls -lh $@
 
 clean:
-> rm -f $(OBJ_MAIN) $(OBJ_ASSETS) $(TEXTURE_OBJS)
+> rm -f $(OBJ_MAIN) $(OBJ_ASSETS) $(OBJ_OBJ) $(TEXTURE_OBJS)
 > rm -f $(TARGET).elf $(TARGET).self $(TARGET).fself $(TARGET).pkg
 > rm -f texture*.png texture*.S
 > rm -rf pkgbuild
