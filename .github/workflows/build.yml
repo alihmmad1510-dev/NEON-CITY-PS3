@@ -10,127 +10,105 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install deps
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3 python3-pip libelf-dev libtool-bin wget git
-          pip3 install pycryptodome cryptography
+          sudo apt-get install -y python3 python3-pip python3-dev libelf-dev libtool-bin wget git build-essential
 
-      - name: Download toolchain
+      - name: Download PS3 Toolchain
         run: |
           wget -q https://github.com/bucanero/ps3toolchain/releases/download/ubuntu-latest-fad3b5fb/ps3dev-ubuntu-latest-2020-08-31.tar.gz
           tar xzf ps3dev-ubuntu-latest-2020-08-31.tar.gz
 
-      - name: Build SELF
+      - name: Build SELF (Game Binary)
         run: make all
 
-      - name: Show outputs
-        run: ls -la neoncity.*
-
-      - name: Make FSELF
+      - name: Create FSELF (Fake-signed Self)
         run: |
           if [ -f ps3dev/bin/make_fself ]; then
             chmod +x ps3dev/bin/make_fself
             ps3dev/bin/make_fself neoncity.elf neoncity.fself
-            echo "✅ FSELF created"
+            echo "✅ FSELF created via make_fself"
           else
             cp neoncity.self neoncity.fself
-            echo "⚠️ make_fself missing, using self"
+            echo "⚠️ make_fself not found, using self as fself"
           fi
 
-      - name: Try multiple ps3py forks
-        id: get_ps3py
+      - name: Get Updated ps3py (Python 3 Compatible)
         run: |
-          REPOS=(
-            "bucanero/ps3py"
-            "h0wdy/ps3py"
-            "ChrisNonyminus/ps3py"
-            "drme/ps3py"
-            "multiparts/ps3py"
-            "TheDiamondDove/ps3py"
-          )
-          OK=0
-          for REPO in "${REPOS[@]}"; do
-            echo "Trying: $REPO"
-            if git clone --depth 1 "https://github.com/$REPO.git" /tmp/ps3py 2>/dev/null; then
-              echo "✅ Cloned: $REPO"
-              ls /tmp/ps3py/src/ 2>/dev/null | head
-              OK=1
-              break
-            fi
-          done
-          if [ $OK -eq 0 ]; then
-            echo "❌ All forks failed. Trying ps3dev GitLab..."
-            git clone --depth 1 https://gitlab.com/ps3dev/ps3py.git /tmp/ps3py 2>/dev/null && \
-              echo "✅ Cloned from GitLab" || echo "❌ GitLab failed too"
-          fi
-          echo "ps3py_available=$([ -d /tmp/ps3py ] && echo yes || echo no)" >> $GITHUB_OUTPUT
+          git clone --depth 1 --branch use-python3 https://github.com/sahlberg/PSL1GHT.git /tmp/psl1ght-py3
+          echo "=== ps3py files ==="
+          ls -la /tmp/psl1ght-py3/tools/ps3py/
 
-      - name: Prepare PKG structure
+      - name: Build pkgcrypt Python extension
+        run: |
+          cd /tmp/psl1ght-py3/tools/ps3py
+          # Build the C extension module
+          python3 setup.py build_ext --inplace
+          ls -la *.so
+
+      - name: Prepare PKG Directory Structure
         run: |
           mkdir -p pkgbuild/USRDIR
           cp neoncity.fself pkgbuild/USRDIR/EBOOT.BIN
-          python3 tools/make_sfo.py pkgbuild/PARAM.SFO || echo "sfo failed"
-          ls -la pkgbuild/ pkgbuild/USRDIR/
+          # Create PARAM.SFO using the updated sfo.py
+          cd /tmp/psl1ght-py3/tools/ps3py
+          python3 sfo.py --help 2>&1 | head -5 || echo "sfo.py help failed, trying direct"
+          # Try creating SFO with the script's expected arguments
+          cd ${{ github.workspace }}
+          python3 tools/make_sfo.py pkgbuild/PARAM.SFO || echo "SFO creation via custom script failed"
 
-      - name: Show ps3py contents
-        if: always()
-        run: |
-          if [ -d /tmp/ps3py ]; then
-            echo "=== /tmp/ps3py ==="
-            find /tmp/ps3py -maxdepth 2 -type f -name "*.py" | head -20
-          fi
-
-      - name: Build PKG
+      - name: Build PKG with Updated pkg.py
         continue-on-error: true
         run: |
           set +e
-          if [ ! -d /tmp/ps3py ]; then
-            echo "❌ ps3py not available"
-            exit 0
-          fi
-          cd /tmp/ps3py/src 2>/dev/null || cd /tmp/ps3py 2>/dev/null
-          echo "=== Current dir: $(pwd) ==="
+          cd /tmp/psl1ght-py3/tools/ps3py
+          echo "=== Current directory: $(pwd) ==="
           ls -la
 
           BUILD_DIR="${{ github.workspace }}/pkgbuild"
           OUT_PKG="${{ github.workspace }}/neoncity.pkg"
           CID="UP0001-NEONCITY1_00-NEONCITY00000001"
 
-          if [ -f pkg.py ]; then
-            echo "=== Trying pkg.py variants ==="
-            # Variant 1: modern with --contentid
-            python3 pkg.py --contentid "$CID" "$BUILD_DIR" "$OUT_PKG" && echo "V1 OK" && ls -la "$OUT_PKG" && exit 0
-            # Variant 2: positional args
-            python3 pkg.py "$CID" "$BUILD_DIR" "$OUT_PKG" && echo "V2 OK" && ls -la "$OUT_PKG" && exit 0
-            # Variant 3: --dir
-            python3 pkg.py --dir "$BUILD_DIR" --out "$OUT_PKG" --cid "$CID" && echo "V3 OK" && ls -la "$OUT_PKG" && exit 0
-            echo "❌ All pkg.py variants failed"
-          fi
+          echo "=== Testing pkg.py usage ==="
+          python3 pkg.py --help 2>&1 | head -20
 
-          if [ -f make_pkg.py ]; then
-            echo "=== Trying make_pkg.py ==="
-            python3 make_pkg.py "$BUILD_DIR" "$OUT_PKG" && ls -la "$OUT_PKG" && exit 0
-          fi
+          echo "=== Attempting PKG build (Variant 1: --contentid) ==="
+          python3 pkg.py --contentid "$CID" "$BUILD_DIR" "$OUT_PKG" 2>&1
+          if [ -f "$OUT_PKG" ]; then echo "✅ PKG created via Variant 1"; exit 0; fi
 
-          echo "❌ No suitable PKG tool found"
+          echo "=== Attempting PKG build (Variant 2: positional) ==="
+          python3 pkg.py "$CID" "$BUILD_DIR" "$OUT_PKG" 2>&1
+          if [ -f "$OUT_PKG" ]; then echo "✅ PKG created via Variant 2"; exit 0; fi
 
-      - name: Final listing
+          echo "=== Attempting PKG build (Variant 3: -c flag) ==="
+          python3 pkg.py -c "$CID" "$BUILD_DIR" "$OUT_PKG" 2>&1
+          if [ -f "$OUT_PKG" ]; then echo "✅ PKG created via Variant 3"; exit 0; fi
+
+          echo "❌ All pkg.py attempts failed"
+          echo "=== pkg.py source (first 100 lines) ==="
+          head -100 pkg.py
+
+      - name: Final Output Listing
         if: always()
         run: |
-          echo "=== All outputs ==="
+          echo "=== All build outputs ==="
           ls -la ${{ github.workspace }}/*.self \
                  ${{ github.workspace }}/*.elf \
                  ${{ github.workspace }}/*.fself \
                  ${{ github.workspace }}/*.pkg 2>/dev/null || true
-          echo "=== pkgbuild ==="
-          find pkgbuild -type f 2>/dev/null
+          echo ""
+          echo "=== PKG build directory ==="
+          find pkgbuild -type f 2>/dev/null || true
+          echo ""
+          echo "=== pkgcrypt extension ==="
+          ls -la /tmp/psl1ght-py3/tools/ps3py/*.so 2>/dev/null || echo "No .so file"
 
-      - name: Upload
+      - name: Upload All Build Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: neoncity-build
+          name: neoncity-pkg-build
           path: |
             neoncity.self
             neoncity.elf
